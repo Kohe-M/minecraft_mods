@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "sorter",
+	"version": "${version}",
+	"name": "Sorter",
+	"description": "インベントリやチェストの画面にソートボタンを追加します。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/sorter/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.omuraisu.sorter.Sorter"
+		],
+		"client": [
+			"com.omuraisu.sorter.client.SorterClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "sorter.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

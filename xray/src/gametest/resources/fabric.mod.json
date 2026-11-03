@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "xray-gametest",
+	"version": "1.0.0",
+	"name": "X-Ray GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.xray.test.XrayClientGameTest"
+		]
+	},
+	"depends": {
+		"xray": "*"
+	}
+}

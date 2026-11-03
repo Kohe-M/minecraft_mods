@@ -1,0 +1,6 @@
+{
+	"key.category.timber.main": "Timber",
+	"key.timber.toggle": "一括伐採の切り替え",
+	"message.timber.enabled": "一括伐採: ON",
+	"message.timber.disabled": "一括伐採: OFF"
+}

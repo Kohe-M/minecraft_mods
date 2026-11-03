@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "timber",
+	"version": "${version}",
+	"name": "Timber",
+	"description": "斧で原木を1つ壊すと、つながった木をまるごと伐採します。専用キー（初期設定: G）でオン/オフを切り替えます。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/timber/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.omuraisu.timber.Timber"
+		],
+		"client": [
+			"com.omuraisu.timber.client.TimberClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "timber-gametest",
+	"version": "1.0.0",
+	"name": "Timber GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"com.omuraisu.timber.test.TimberGameTest"
+		]
+	},
+	"depends": {
+		"timber": "*"
+	}
+}

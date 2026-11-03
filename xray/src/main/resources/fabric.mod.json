@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "xray",
+	"version": "${version}",
+	"name": "X-Ray",
+	"description": "Sodium / Iris 環境でも動作します。鉱石以外のブロックを透過して、鉱石だけを明るく表示します。X キーの単押しでオン/オフ、長押しのホイールで全鉱石か鉱石1種類かを選べます。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/xray/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.omuraisu.xray.client.XrayClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "xray.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

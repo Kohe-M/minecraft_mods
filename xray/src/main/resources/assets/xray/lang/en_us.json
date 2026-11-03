@@ -1,0 +1,17 @@
+{
+	"key.category.xray.main": "X-Ray",
+	"key.xray.toggle": "Toggle X-Ray (hold for ore wheel)",
+	"message.xray.enabled": "X-Ray: ON (%s)",
+	"message.xray.disabled": "X-Ray: OFF",
+	"xray.mode.all": "All Ores",
+	"xray.mode.diamond": "Diamond",
+	"xray.mode.emerald": "Emerald",
+	"xray.mode.gold": "Gold",
+	"xray.mode.iron": "Iron",
+	"xray.mode.copper": "Copper",
+	"xray.mode.coal": "Coal",
+	"xray.mode.redstone": "Redstone",
+	"xray.mode.lapis": "Lapis Lazuli",
+	"xray.mode.quartz": "Nether Quartz",
+	"xray.mode.debris": "Ancient Debris"
+}

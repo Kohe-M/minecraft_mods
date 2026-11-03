@@ -1,0 +1,18 @@
+{
+	"schemaVersion": 1,
+	"id": "sorter-gametest",
+	"version": "1.0.0",
+	"name": "Sorter GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"com.omuraisu.sorter.test.SorterGameTest"
+		],
+		"fabric-client-gametest": [
+			"com.omuraisu.sorter.test.SorterClientGameTest"
+		]
+	},
+	"depends": {
+		"sorter": "*"
+	}
+}
