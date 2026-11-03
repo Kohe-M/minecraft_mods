@@ -22,6 +22,17 @@ Fabric mod（sorter / timber / xray / zoom）を1つの Gradle マルチプロ�
 - 旧バージョンの修正は `mc/<MC>` でコミットし、main にも必要なら `git cherry-pick -x` する
 - main に直接コミットしてよい。大きな変更は作業ブランチ（`feat/<内容>` など）を切る
 
+## 作業の流れ
+
+実装が終わったら、確認を待たずに push まで行う。
+
+1. 変更した mod のビルドとゲームテストを通す（client 側のゲームテストがある mod はそれも）
+2. コミットメッセージのルールに沿ってコミットする
+3. `git push --follow-tags` で、今いるブランチとタグを push する
+
+- テストが通らないときはコミットも push もせず、失敗の内容を報告する
+- force push・履歴の書き換え・ブランチやタグの削除は、ユーザーに確認してから行う
+
 ## タグ
 
 - `<mod>/<mod_version>+<MC>`（例: `sorter/1.0.0+26.3`）の注釈付きタグ
@@ -72,7 +83,6 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 ./gradlew :xray:runClient                                # -PnoSodium でバニラ描画
 ```
 
-- 変更した mod のテストを通してからコミットする
 - 見た目は `runClientGameTest` のスクリーンショット（`<mod>/build/run/clientGameTest/screenshots`）で確認する
 
 ## mod の作り方
