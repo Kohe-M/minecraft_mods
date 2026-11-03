@@ -95,6 +95,10 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 - パッケージは `com.omuraisu.<mod>`、mod ID はディレクトリ名と同じにする
 - 新しい mod は `settings.gradle` の `include` に追加し、`<mod>/gradle.properties` に `mod_version` を置く
 - 言語ファイルは `en_us.json` と `ja_jp.json` の両方を用意する
+- mod を追加したときや、クライアント・サーバーのどちらに入れるかが変わったときは、README の mod 表（クライアント / サーバー列）を更新する
+  - 列の値は `必須` / `任意（入れると何ができるか）` / `不要`
+  - `fabric.mod.json` の `environment` と食い違わないようにする（クライアントのみなら `client`）
+- 片側にだけ入っていても落ちないようにする。相手側へのパケットは `ClientPlayNetworking.canSend` などで確かめてから送る
 
 ## Iris + Sodium 対応
 
