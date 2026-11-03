@@ -5,6 +5,7 @@
 | [sorter](sorter) | インベントリ・チェストのソートボタン |
 | [timber](timber) | 一括伐採 |
 | [xray](xray) | 鉱石透視（Sodium / Iris 対応） |
+| [zoom](zoom) | 長押しズーム |
 
 ## 構成
 
@@ -18,7 +19,8 @@ minecraft_mods/
 │  ├─ build.gradle      その mod だけの設定
 │  └─ src/
 ├─ timber/
-└─ xray/
+├─ xray/
+└─ zoom/
 ```
 
 成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。

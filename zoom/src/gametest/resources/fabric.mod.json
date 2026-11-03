@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "zoom-gametest",
+	"version": "1.0.0",
+	"name": "Zoom GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.zoom.test.ZoomClientGameTest"
+		]
+	},
+	"depends": {
+		"zoom": "*"
+	}
+}

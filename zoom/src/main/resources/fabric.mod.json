@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "zoom",
+	"version": "${version}",
+	"name": "Zoom",
+	"description": "C キーを押している間だけ視界をズームします。ズーム中はマウスホイールで倍率を変えられ、視点の動きも倍率に合わせて遅くなります。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/zoom/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.omuraisu.zoom.client.ZoomClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "zoom.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	}
+}
