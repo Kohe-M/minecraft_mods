@@ -80,8 +80,18 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 - パッケージは `com.omuraisu.<mod>`、mod ID はディレクトリ名と同じにする
 - 新しい mod は `settings.gradle` の `include` に追加し、`<mod>/gradle.properties` に `mod_version` を置く
 - 言語ファイルは `en_us.json` と `ja_jp.json` の両方を用意する
-- Iris + Sodium 環境で遊ぶ前提。描画に関わる mod は Sodium（チャンク構築は `LevelSlice`）にも対応させる
-  - `compileOnly` と `localRuntime` で `maven.modrinth:sodium` / `iris` を入れて確認する（`xray/build.gradle` 参照）
+
+## Iris + Sodium 対応
+
+Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動かす。
+
+- Iris + Sodium あり・なしの両方で動くようにする。`fabric.mod.json` の `depends` には入れない
+- 描画に関わる処理は、Sodium が置き換える経路にもフックする（例: チャンク構築は Sodium の `LevelSlice`）
+  - Sodium のクラスへの mixin には `@Pseudo` を付けて、Sodium がなくても起動できるようにする
+  - Sodium の API は `compileOnly "maven.modrinth:sodium:${sodium_version}"` で参照する
+- Iris でシェーダーパックを有効にしても、表示が崩れたり効果が消えたりしないようにする
+- 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（`xray/build.gradle`・`zoom/build.gradle` 参照）
+- Sodium・Iris のバージョンはルートの `gradle.properties` の `sodium_version`・`iris_version`。MC を上げたら一緒に上げる
 
 ## Minecraft 26.3 の注意点
 
