@@ -51,6 +51,17 @@ public class SorterClientGameTest implements FabricClientGameTest {
 			clickButton(context, true, 1);
 			context.takeScreenshot("sorter-chest-after");
 
+			// カーソルを離したら、押したボタンのハイライトは消える
+			context.getInput().setCursorPos(0, 0);
+			context.waitTicks(2);
+			context.runOnClient(client -> {
+				for (AbstractWidget button : Screens.getWidgets(client.gui.screen())) {
+					if (button.isHoveredOrFocused()) {
+						throw new AssertionError("still highlighted: " + button.getMessage().getString());
+					}
+				}
+			});
+
 			singleplayer.getServer().runOnServer(server -> {
 				Inventory inventory = server.getPlayerList().getPlayers().getFirst().getInventory();
 				assertStack(chest.getItem(0), new ItemStack(Items.DIRT, 7));

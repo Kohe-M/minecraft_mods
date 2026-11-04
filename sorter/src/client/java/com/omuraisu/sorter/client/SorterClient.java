@@ -56,7 +56,13 @@ public class SorterClient implements ClientModInitializer {
 		int slotY = screen.getMenu().slots.get(slot).y;
 		ImageButton button = new ImageButton(0, 0, SIZE, SIZE, SPRITES,
 				pressed -> ClientPlayNetworking.send(new SortPayload(screen.getMenu().containerId, slot)),
-				Component.translatable("button.sorter.sort"));
+				Component.translatable("button.sorter.sort")) {
+			// マウスで押した後もハイライトが残らないようにする
+			@Override
+			public boolean shouldTakeFocusAfterInteraction() {
+				return false;
+			}
+		};
 		button.setTooltip(Tooltip.create(Component.translatable("button.sorter.sort")));
 		Screens.getWidgets(screen).add(button);
 
