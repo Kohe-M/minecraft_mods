@@ -3,11 +3,14 @@ package com.omuraisu.minimap.test;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
+import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.omuraisu.minimap.client.MapScreen;
@@ -18,17 +21,21 @@ import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
+import net.fabricmc.fabric.api.entity.FakePlayer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
+import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ARGB;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -67,6 +74,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testMapScreen(context, singleplayer);
 			testPinNames(context, singleplayer, save);
 			testBeams(context, singleplayer);
+			testOtherPlayers(context, singleplayer);
 			testNether(context, singleplayer);
 			if (FabricLoader.getInstance().isModLoaded("iris")) {
 				testShaderPack(context, singleplayer);
@@ -617,6 +625,106 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		});
 	}
 
+	private static void testOtherPlayers(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+		int faceDx = 20;
+		int faceDz = -12;
+		map(context, "player-before", 854, 480).assertBlockRelative(faceDx, faceDz, MapColor.STONE);
+
+		GameProfile profile = new GameProfile(UUID.nameUUIDFromBytes("minimap-test".getBytes(StandardCharsets.UTF_8)), "Alex");
+		FakePlayer other = singleplayer.getServer().computeOnServer(server -> {
+			ServerLevel level = server.overworld();
+			FakePlayer fake = FakePlayer.get(level, profile);
+			fake.setPos(PLAYER_X + faceDx + 0.5, FEET_Y, PLAYER_Z + faceDz + 0.5);
+			server.getPlayerList().broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(fake)));
+			level.addNewPlayer(fake);
+			return fake;
+		});
+		context.waitTicks(10);
+		int players = context.computeOnClient(client -> client.level.players().size());
+		assertEquals("players known to the client", 2, players);
+
+		// ミニマップとマップ画面の両方で見える
+		Map map = map(context, "player-minimap", 854, 480);
+		map.assertNotBlockRelative(faceDx, faceDz, MapColor.STONE);
+		map.assertBlockRelative(faceDx + 12, faceDz, MapColor.STONE);
+		toggleMap(context);
+		moveCursorAway(context);
+		ScreenView view = new ScreenView(854, 480, 2, PLAYER_X, PLAYER_Z);
+		view.assertNotBlock(context, "player-map", PLAYER_X + faceDx, PLAYER_Z + faceDz, MapColor.STONE);
+		view.assertBlock(context, "player-map-away", PLAYER_X + faceDx + 12, PLAYER_Z + faceDz, MapColor.STONE);
+
+		// 地図を動かして画面の外に出しても、縁で方角が分かる
+		context.getInput().setCursorPos(700, 240);
+		context.waitTick();
+		context.getInput().holdMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		context.getInput().setCursorPos(100, 240);
+		context.waitTick();
+		context.getInput().setCursorPos(700, 240);
+		context.waitTick();
+		context.getInput().setCursorPos(100, 240);
+		context.waitTick();
+		context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		moveCursorAway(context);
+		context.takeScreenshot("player-map-panned");
+		toggleMap(context);
+
+		// 動くとついてくる
+		int movedDx = -24;
+		int movedDz = 18;
+		singleplayer.getServer().runOnServer(server -> other.setPos(PLAYER_X + movedDx + 0.5, FEET_Y, PLAYER_Z + movedDz + 0.5));
+		context.waitTicks(20);
+		map = map(context, "player-moved", 854, 480);
+		map.assertNotBlockRelative(movedDx, movedDz, MapColor.STONE);
+		map.assertBlockRelative(faceDx, faceDz, MapColor.STONE);
+
+		// 透明なプレイヤーは出さない
+		singleplayer.getServer().runOnServer(server -> other.setInvisible(true));
+		context.waitTicks(5);
+		map(context, "player-invisible", 854, 480).assertBlockRelative(movedDx, movedDz, MapColor.STONE);
+		singleplayer.getServer().runOnServer(server -> other.setInvisible(false));
+		context.waitTicks(5);
+		map(context, "player-visible-again", 854, 480).assertNotBlockRelative(movedDx, movedDz, MapColor.STONE);
+
+		// スペクテイターは出さない
+		singleplayer.getServer().runOnServer(server -> other.setGameMode(GameType.SPECTATOR));
+		context.waitTicks(5);
+		map(context, "player-spectator", 854, 480).assertBlockRelative(movedDx, movedDz, MapColor.STONE);
+		singleplayer.getServer().runOnServer(server -> other.setGameMode(GameType.SURVIVAL));
+		context.waitTicks(5);
+
+		// エンティティが届かない距離の相手も、ロケーターバーの情報で方角が分かる
+		Map empty = map(context, "player-far-before", 854, 480);
+		singleplayer.getServer().runOnServer(server -> {
+			other.setPos(PLAYER_X + 5000.5, FEET_Y, PLAYER_Z + 0.5);
+			// FakePlayer は tick されないので、最初の tick を済ませた状態にする。実際のプレイヤーは参加したときに登録される
+			other.baseTick();
+			server.overworld().getWaypointManager().trackWaypoint(other);
+			server.overworld().getWaypointManager().updatePlayer(server.getPlayerList().getPlayers().getFirst());
+		});
+		context.waitTicks(20);
+		assertEquals("far player should not be a tracked entity", 1, (int) context.computeOnClient(client -> client.level.players().size()));
+		map = map(context, "player-far", 854, 480);
+		int edge = 64 - 5;
+		if (map.pixelRelative(edge, 0) == empty.pixelRelative(edge, 0)) {
+			throw new AssertionError("far player should be drawn at the east edge of the minimap");
+		}
+		map.assertBlockRelative(-edge, 0, MapColor.GRASS);
+
+		singleplayer.getServer().runOnServer(server -> {
+			server.overworld().getWaypointManager().untrackWaypoint(other);
+			server.overworld().removePlayerImmediately(other, Entity.RemovalReason.DISCARDED);
+			server.getPlayerList().broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(profile.id())));
+		});
+		context.waitTicks(10);
+		map = map(context, "player-left", 854, 480);
+		if (map.pixelRelative(edge, 0) != empty.pixelRelative(edge, 0)) {
+			throw new AssertionError("player who left should disappear from the minimap");
+		}
+	}
+
 	private static void toggleMap(ClientGameTestContext context) {
 		context.getInput().pressKey(MinimapClient.mapKey);
 		context.waitTicks(2);
@@ -692,6 +800,13 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			}
 			throw new AssertionError(name + ": block " + blockX + ", " + blockZ + " should have map color " + color.col
 					+ " but pixel was " + Integer.toHexString(pixel));
+		}
+
+		void assertNotBlock(ClientGameTestContext context, String name, int blockX, int blockZ, MapColor color) {
+			int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(x(blockX), y(blockZ)));
+			if (isMapColor(pixel, color)) {
+				throw new AssertionError(name + ": something should be drawn at " + blockX + ", " + blockZ + " but it was terrain");
+			}
 		}
 
 		void assertPin(ClientGameTestContext context, String name, Pins.Pin pin) {
@@ -914,6 +1029,15 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 	}
 
+	private static boolean isMapColor(int pixel, MapColor color) {
+		for (MapColor.Brightness brightness : MapColor.Brightness.values()) {
+			if (ARGB.opaque(color.calculateARGBColor(brightness)) == pixel) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static <T> T readImage(Path path, ImageReader<T> reader) {
 		try (InputStream in = Files.newInputStream(path); NativeImage image = NativeImage.read(in)) {
 			return reader.read(image);
@@ -940,8 +1064,19 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			assertBlockRelative(x - playerX, z - playerZ, color);
 		}
 
+		int pixelRelative(int dx, int dz) {
+			return pixels[pixelAt(dz)][pixelAt(dx)];
+		}
+
+		void assertNotBlockRelative(int dx, int dz, MapColor color) {
+			int pixel = pixelRelative(dx, dz);
+			if (isMapColor(pixel, color)) {
+				throw new AssertionError(name + ": something should be drawn at offset " + dx + ", " + dz + " but it was terrain");
+			}
+		}
+
 		void assertBlockRelative(int dx, int dz, MapColor color) {
-			int pixel = pixels[pixelAt(dz)][pixelAt(dx)];
+			int pixel = pixelRelative(dx, dz);
 			for (MapColor.Brightness brightness : MapColor.Brightness.values()) {
 				if (ARGB.opaque(color.calculateARGBColor(brightness)) == pixel) {
 					return;

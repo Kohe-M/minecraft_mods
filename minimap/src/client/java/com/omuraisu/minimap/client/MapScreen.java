@@ -123,6 +123,12 @@ public class MapScreen extends Screen {
 			}
 		}
 
+		List<PlayerMarkers.Marker> markers = PlayerMarkers.collect(minecraft, delta);
+		int[][] faces = new int[markers.size()][];
+		for (int i = 0; i < faces.length; i++) {
+			faces[i] = face(graphics, markers.get(i), unit);
+		}
+
 		Vec3 position = player.getPosition(delta);
 		MapIcons.arrow(graphics, (float) screenX(position.x), (float) screenY(position.z), player.getViewYRot(delta), unit);
 
@@ -134,6 +140,31 @@ public class MapScreen extends Screen {
 				MapIcons.label(graphics, font, pin.name(), tipX(pin) / guiScale, (tipY(pin) - pinHeight) / guiScale - MapIcons.LABEL_HEIGHT);
 			}
 		}
+		for (int i = 0; i < faces.length; i++) {
+			int faceBottom = faces[i][1] + (MapIcons.FACE_SIZE + 2) * unit / 2;
+			// 画面の下の縁にいるときは顔の上に出す
+			int labelTop = faceBottom / guiScale + MapIcons.LABEL_HEIGHT <= height
+					? faceBottom / guiScale
+					: (faces[i][1] - (MapIcons.FACE_SIZE + 2) * unit / 2) / guiScale - MapIcons.LABEL_HEIGHT;
+			MapIcons.label(graphics, font, markers.get(i).name(), faces[i][0] / guiScale, labelTop);
+		}
+	}
+
+	// 画面の外の相手は方角を保って縁に寄せる。描いた中心の位置を返す
+	private int[] face(GuiGraphicsExtractor graphics, PlayerMarkers.Marker marker, int unit) {
+		Window window = minecraft.getWindow();
+		double halfWidth = window.getWidth() / 2.0;
+		double halfHeight = window.getHeight() / 2.0;
+		double dx = screenX(marker.x()) - halfWidth;
+		double dy = screenY(marker.z()) - halfHeight;
+		boolean inside = Math.abs(dx) <= halfWidth && Math.abs(dy) <= halfHeight;
+
+		double margin = (MapIcons.FACE_SIZE + 2) * unit / 2.0;
+		double reach = Math.min(1, Math.min((halfWidth - margin) / Math.abs(dx), (halfHeight - margin) / Math.abs(dy)));
+		int x = (int) Math.round(halfWidth + dx * reach);
+		int y = (int) Math.round(halfHeight + dy * reach);
+		MapIcons.face(graphics, marker.skin(), x, y, unit, !inside);
+		return new int[] {x, y};
 	}
 
 	@Override

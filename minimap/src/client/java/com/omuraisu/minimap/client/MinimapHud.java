@@ -20,7 +20,6 @@ final class MinimapHud {
 	static final MapTerrain TERRAIN = new MapTerrain("terrain", TERRAIN_SIZE);
 
 	private static final int FRAME_COLOR = 0xFF0B0D12;
-	private static final int FADED_PIN_ALPHA = 0xA0;
 	private static final int BENEFICIAL_EFFECTS_HEIGHT = 25;
 	private static final int HARMFUL_EFFECTS_HEIGHT = 51;
 	private static final int DEMO_EFFECTS_OFFSET = 15;
@@ -58,6 +57,9 @@ final class MinimapHud {
 		terrain(graphics, left, top, size, unit);
 		for (Pins.Pin pin : MinimapClient.PINS.in(player.level().dimension().identifier())) {
 			pin(graphics, pin, left, top, size, unit);
+		}
+		for (PlayerMarkers.Marker marker : PlayerMarkers.collect(client, partialTick)) {
+			face(graphics, marker, left, top, size, unit);
 		}
 		MapIcons.arrow(graphics, size / 2f, size / 2f, player.getViewYRot(partialTick), unit);
 
@@ -102,8 +104,20 @@ final class MinimapHud {
 		int tipX = Math.round(half + dx * reach);
 		int tipY = Math.round(half + dy * reach);
 
-		int color = inside ? pin.color() : ARGB.color(FADED_PIN_ALPHA, pin.color());
+		int color = inside ? pin.color() : ARGB.color(MapIcons.FADED_ALPHA, pin.color());
 		MapIcons.pin(graphics, tipX, tipY, width, height, color);
+	}
+
+	private static void face(GuiGraphicsExtractor graphics, PlayerMarkers.Marker marker, int left, int top, int size, int unit) {
+		float half = size / 2f;
+		float dx = Mth.floor(marker.x() * unit) - left - half;
+		float dy = Mth.floor(marker.z() * unit) - top - half;
+		boolean inside = Math.abs(dx) <= half && Math.abs(dy) <= half;
+
+		// ピンと同じく、遠い相手は方角を保って縁に出す
+		float limit = half - (MapIcons.FACE_SIZE + 2) * unit / 2f;
+		float reach = Math.min(1, limit / Math.max(Math.abs(dx), Math.abs(dy)));
+		MapIcons.face(graphics, marker.skin(), Math.round(half + dx * reach), Math.round(half + dy * reach), unit, !inside);
 	}
 
 	private MinimapHud() {
