@@ -3,12 +3,15 @@ package com.omuraisu.minimap.test;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -19,6 +22,8 @@ import com.omuraisu.minimap.client.Pins;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerConnection;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.fabric.api.entity.FakePlayer;
@@ -95,6 +100,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 
 		testServerFile();
+		testDedicatedServer(context);
 		testNaturalTerrain(context);
 	}
 
@@ -722,6 +728,134 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		map = map(context, "player-left", 854, 480);
 		if (map.pixelRelative(edge, 0) != empty.pixelRelative(edge, 0)) {
 			throw new AssertionError("player who left should disappear from the minimap");
+		}
+	}
+
+	// 専用サーバーに接続しても動く。ピンはサーバーごとのファイルに保存され、他のプレイヤーは通信で届く
+	private static void testDedicatedServer(ClientGameTestContext context) {
+		try {
+			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
+			Files.writeString(Path.of("eula.txt"), "eula=true\n");
+			// 前回の実行のピンが残らないようにする
+			Path pinDirectory = Pins.serverFile("x").getParent();
+			if (Files.isDirectory(pinDirectory)) {
+				try (Stream<Path> files = Files.list(pinDirectory)) {
+					for (Path file : files.toList()) {
+						Files.delete(file);
+					}
+				}
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+
+		// 普段のサーバーと重ならないよう空いているポートを使う
+		Properties properties = new Properties();
+		try (ServerSocket socket = new ServerSocket(0)) {
+			properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+
+		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties)) {
+			Pins.Pin pin;
+			try (TestDedicatedServerConnection connection = server.connect()) {
+				connection.waitForChunksRender();
+				context.waitTicks(40);
+				context.runOnClient(client -> client.gui.toastManager().clear());
+				context.waitTicks(3);
+				frame(context, "server-minimap", 854, 480);
+
+				int[] feet = context.computeOnClient(client -> new int[] {client.player.getBlockX(), client.player.getBlockZ()});
+				pin = new Pins.Pin(OVERWORLD, feet[0], feet[1]);
+				context.getInput().pressKey(MinimapClient.placeKey);
+				context.waitTicks(2);
+				assertPins(OVERWORLD, pin);
+				Path file = context.computeOnClient(client -> Pins.serverFile(client.getCurrentServer().ip));
+				assertFileEquals(file, "minecraft:overworld " + feet[0] + " " + feet[1] + "\n");
+
+				// マップ画面で名前を付けて、ファイルに残す
+				toggleMap(context);
+				moveCursorAway(context);
+				context.waitTicks(MAP_REFRESH_TICKS);
+				ScreenView view = new ScreenView(854, 480, 2, feet[0], feet[1]);
+				Pins.Pin clicked = new Pins.Pin(OVERWORLD, feet[0] + 30, feet[1] + 20);
+				click(context, view.x(clicked.x()), view.y(clicked.z()));
+				context.getInput().typeChars("Camp");
+				confirmName(context);
+				assertPins(OVERWORLD, pin, new Pins.Pin(OVERWORLD, clicked.x(), clicked.z(), "Camp"));
+				context.takeScreenshot("server-map");
+				toggleMap(context);
+				assertFileEquals(file, "minecraft:overworld " + feet[0] + " " + feet[1] + "\n"
+						+ "minecraft:overworld " + clicked.x() + " " + clicked.z() + " Camp\n");
+
+				testServerPlayers(context, server, feet[0], feet[1]);
+			}
+
+			// 切断するとピンは閉じ、接続し直すと読み直される
+			assertPins(OVERWORLD);
+			try (TestDedicatedServerConnection connection = server.connect()) {
+				connection.waitForChunksRender();
+				assertPins(OVERWORLD, pin, new Pins.Pin(OVERWORLD, pin.x() + 30, pin.z() + 20, "Camp"));
+			}
+		}
+	}
+
+	private static void testServerPlayers(ClientGameTestContext context, TestDedicatedServerContext server, int x, int z) {
+		int dx = 20;
+		int dz = -12;
+		int edge = 64 - 5;
+		Map before = map(context, "server-player-before", 854, 480);
+
+		GameProfile profile = new GameProfile(UUID.nameUUIDFromBytes("minimap-server-test".getBytes(StandardCharsets.UTF_8)), "Steve");
+		double y = context.computeOnClient(client -> client.player.getY());
+		FakePlayer other = server.computeOnServer(minecraft -> {
+			ServerLevel level = minecraft.overworld();
+			FakePlayer fake = FakePlayer.get(level, profile);
+			fake.setPos(x + dx + 0.5, y, z + dz + 0.5);
+			minecraft.getPlayerList().broadcastAll(ClientboundPlayerInfoUpdatePacket.createPlayerInitializing(List.of(fake)));
+			level.addNewPlayer(fake);
+			return fake;
+		});
+		context.waitTicks(20);
+		assertEquals("players known to the client", 2, (int) context.computeOnClient(client -> client.level.players().size()));
+		if (map(context, "server-player", 854, 480).pixelRelative(dx, dz) == before.pixelRelative(dx, dz)) {
+			throw new AssertionError("nearby player should be drawn on the minimap");
+		}
+
+		// エンティティが届かない距離の相手は、ロケーターバーのパケットで方角が分かる
+		server.runOnServer(minecraft -> {
+			ServerLevel level = minecraft.overworld();
+			other.setPos(x + 5000.5, y, z + 0.5);
+			other.baseTick();
+			level.getWaypointManager().trackWaypoint(other);
+			level.getWaypointManager().updatePlayer(minecraft.getPlayerList().getPlayers().getFirst());
+		});
+		context.waitTicks(20);
+		assertEquals("far player should not be a tracked entity", 1, (int) context.computeOnClient(client -> client.level.players().size()));
+		if (map(context, "server-player-far", 854, 480).pixelRelative(edge, 0) == before.pixelRelative(edge, 0)) {
+			throw new AssertionError("far player should be drawn at the east edge of the minimap");
+		}
+
+		server.runOnServer(minecraft -> {
+			minecraft.overworld().getWaypointManager().untrackWaypoint(other);
+			minecraft.overworld().removePlayerImmediately(other, Entity.RemovalReason.DISCARDED);
+			minecraft.getPlayerList().broadcastAll(new ClientboundPlayerInfoRemovePacket(List.of(profile.id())));
+		});
+		context.waitTicks(10);
+		if (map(context, "server-player-left", 854, 480).pixelRelative(edge, 0) != before.pixelRelative(edge, 0)) {
+			throw new AssertionError("player who left should disappear from the minimap");
+		}
+	}
+
+	private static void assertFileEquals(Path file, String expected) {
+		try {
+			String actual = Files.readString(file);
+			if (!actual.equals(expected)) {
+				throw new AssertionError("expected " + file + " to be " + expected + " but was " + actual);
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 
