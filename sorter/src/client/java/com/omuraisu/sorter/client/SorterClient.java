@@ -1,7 +1,5 @@
 package com.omuraisu.sorter.client;
 
-import java.util.function.IntSupplier;
-
 import com.omuraisu.sorter.SortPayload;
 import com.omuraisu.sorter.client.mixin.AbstractContainerScreenAccessor;
 
@@ -23,9 +21,11 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 
 public class SorterClient implements ClientModInitializer {
-	private static final int SIZE = 9;
+	private static final int SIZE = 11;
 	// 画面の縁からスロット欄の右端まで
 	private static final int MARGIN = 7;
+	// ボタンの下端からスロットの座標まで（スロットの枠 1 + 隙間 1）
+	private static final int SLOT_GAP = 2;
 
 	private static final WidgetSprites SPRITES = new WidgetSprites(
 			Identifier.fromNamespaceAndPath("sorter", "sort"),
@@ -39,22 +39,21 @@ public class SorterClient implements ClientModInitializer {
 			}
 			if (screen instanceof ContainerScreen || screen instanceof ShulkerBoxScreen) {
 				AbstractContainerScreen<?> container = (AbstractContainerScreen<?>) screen;
-				AbstractContainerScreenAccessor accessor = (AbstractContainerScreenAccessor) screen;
-				addButton(container, accessor::getTitleLabelY, 0);
-				addButton(container, accessor::getInventoryLabelY, mainInventorySlot(container.getMenu()));
+				addButton(container, 0);
+				addButton(container, mainInventorySlot(container.getMenu()));
 			} else if (screen instanceof InventoryScreen inventory) {
-				AbstractContainerScreenAccessor accessor = (AbstractContainerScreenAccessor) screen;
-				addButton(inventory, accessor::getInventoryLabelY, mainInventorySlot(inventory.getMenu()));
+				addButton(inventory, mainInventorySlot(inventory.getMenu()));
 			}
 		});
 	}
 
-	// labelY の行の右端、スロット欄の真上に置く
-	private static void addButton(AbstractContainerScreen<?> screen, IntSupplier labelY, int slot) {
+	// スロット欄の真上、右端に置く
+	private static void addButton(AbstractContainerScreen<?> screen, int slot) {
 		if (slot < 0) {
 			return;
 		}
 		AbstractContainerScreenAccessor accessor = (AbstractContainerScreenAccessor) screen;
+		int slotY = screen.getMenu().slots.get(slot).y;
 		ImageButton button = new ImageButton(0, 0, SIZE, SIZE, SPRITES,
 				pressed -> ClientPlayNetworking.send(new SortPayload(screen.getMenu().containerId, slot)),
 				Component.translatable("button.sorter.sort"));
@@ -64,7 +63,7 @@ public class SorterClient implements ClientModInitializer {
 		// レシピ本の開閉で画面の位置が変わるため、描画のたびに合わせる
 		ScreenEvents.beforeExtract(screen).register((s, graphics, mouseX, mouseY, delta) -> {
 			button.setX(accessor.getLeftPos() + accessor.getImageWidth() - MARGIN - SIZE);
-			button.setY(accessor.getTopPos() + labelY.getAsInt() - 1);
+			button.setY(accessor.getTopPos() + slotY - SLOT_GAP - SIZE);
 		});
 	}
 

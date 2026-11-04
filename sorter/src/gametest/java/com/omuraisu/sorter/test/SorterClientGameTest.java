@@ -12,12 +12,14 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.ImageButton;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ShulkerBoxMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -60,6 +62,13 @@ public class SorterClientGameTest implements FabricClientGameTest {
 				assertStack(inventory.getItem(9), new ItemStack(Items.TORCH, 30));
 				assertStack(inventory.getItem(10), new ItemStack(Items.BREAD, 14));
 			});
+
+			// スロット欄の間が一番狭い画面
+			singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst().openMenu(
+					new SimpleMenuProvider((id, inv, p) -> new ShulkerBoxMenu(id, inv, new SimpleContainer(27)), Component.literal("Shulker Box"))));
+			context.waitForScreen(ShulkerBoxScreen.class);
+			context.waitTicks(2);
+			context.takeScreenshot("sorter-shulker");
 
 			context.setScreen(() -> null);
 			context.runOnClient(client -> client.gui.setScreen(new InventoryScreen(client.player)));

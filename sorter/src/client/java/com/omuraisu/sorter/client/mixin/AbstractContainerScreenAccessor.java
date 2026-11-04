@@ -15,10 +15,4 @@ public interface AbstractContainerScreenAccessor {
 
 	@Accessor
 	int getImageWidth();
-
-	@Accessor
-	int getTitleLabelY();
-
-	@Accessor
-	int getInventoryLabelY();
 }
