@@ -8,6 +8,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.phys.Vec3;
 
 // GUI スケールの設定に左右されないよう、ウィンドウの実ピクセルを単位に描く
@@ -20,6 +21,9 @@ final class MinimapHud {
 
 	private static final int FRAME_COLOR = 0xFF0B0D12;
 	private static final int FADED_PIN_ALPHA = 0xA0;
+	private static final int BENEFICIAL_EFFECTS_HEIGHT = 25;
+	private static final int HARMFUL_EFFECTS_HEIGHT = 51;
+	private static final int DEMO_EFFECTS_OFFSET = 15;
 	// 1 ブロックを単位にした余白
 	private static final int MARGIN = 8;
 
@@ -31,7 +35,7 @@ final class MinimapHud {
 	static void extract(GuiGraphicsExtractor graphics, DeltaTracker delta) {
 		Minecraft client = Minecraft.getInstance();
 		LocalPlayer player = client.player;
-		// 左上は F3 の表示と重なる
+		// 右上は F3 の表示と重なる
 		if (player == null || client.getDebugOverlay().showDebugScreen()) {
 			return;
 		}
@@ -47,7 +51,8 @@ final class MinimapHud {
 
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(1f / window.getGuiScale());
-		graphics.pose().translate(MARGIN * unit, MARGIN * unit);
+		graphics.pose().translate(window.getWidth() - size - MARGIN * unit,
+				MARGIN * unit + effectsHeight(client, player) * window.getGuiScale());
 
 		graphics.fill(-unit, -unit, size + unit, size + unit, FRAME_COLOR);
 		terrain(graphics, left, top, size, unit);
@@ -57,6 +62,17 @@ final class MinimapHud {
 		MapIcons.arrow(graphics, size / 2f, size / 2f, player.getViewYRot(partialTick), unit);
 
 		graphics.pose().popMatrix();
+	}
+
+	// ステータス効果のアイコンが右上に並ぶ高さ（GUI 座標）。その下に地図を置く
+	private static int effectsHeight(Minecraft client, LocalPlayer player) {
+		int height = 0;
+		for (MobEffectInstance effect : player.getActiveEffects()) {
+			if (effect.showIcon()) {
+				height = Math.max(height, effect.getEffect().value().isBeneficial() ? BENEFICIAL_EFFECTS_HEIGHT : HARMFUL_EFFECTS_HEIGHT);
+			}
+		}
+		return height > 0 && client.isDemo() ? height + DEMO_EFFECTS_OFFSET : height;
 	}
 
 	private static void terrain(GuiGraphicsExtractor graphics, int left, int top, int size, int unit) {

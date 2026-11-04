@@ -25,6 +25,8 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ARGB;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
@@ -58,6 +60,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testScale(context);
 			testTerrain(context, singleplayer);
 			testHidden(context);
+			testEffects(context, singleplayer);
 			testPins(context, singleplayer);
 			testMapScreen(context, singleplayer);
 			testNether(context, singleplayer);
@@ -106,10 +109,15 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 	// 解像度に合わせて大きくなり、GUI スケールの設定には左右されない
 	private static void testScale(ClientGameTestContext context) {
-		assertEquals("map at 854x480", 130, frame(context, "scale-480p", 854, 480).size());
+		Frame small = frame(context, "scale-480p", 854, 480);
+		assertEquals("map at 854x480", 130, small.size());
+		assertEquals("right edge at 854x480", 854 - 7, small.x() + small.size());
+		assertEquals("top edge at 854x480", 7, small.y());
 
 		Frame fullHd = frame(context, "scale-1080p", 1920, 1080);
 		assertEquals("map at 1920x1080", 260, fullHd.size());
+		assertEquals("right edge at 1920x1080", 1920 - 14, fullHd.x() + fullHd.size());
+		assertEquals("top edge at 1920x1080", 14, fullHd.y());
 
 		int guiScale = context.computeOnClient(client -> client.options.guiScale().get());
 		for (int scale : new int[] {1, 2, 4}) {
@@ -163,6 +171,34 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			moved.assertBlock(SEAM + dx, SEAM, MapColor.FIRE);
 		}
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+	}
+
+	// ステータス効果のアイコンと重ならない
+	private static void testEffects(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		int guiScale = context.computeOnClient(client -> client.getWindow().getGuiScale());
+
+		singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst()
+				.addEffect(new MobEffectInstance(MobEffects.SPEED, 2000)));
+		context.waitTicks(3);
+		assertEquals("map under a beneficial effect", 25 * guiScale + 7, frame(context, "effect-beneficial", 854, 480).y());
+
+		singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst()
+				.addEffect(new MobEffectInstance(MobEffects.POISON, 2000)));
+		context.waitTicks(3);
+		assertEquals("map under a harmful effect", 51 * guiScale + 7, frame(context, "effect-harmful", 854, 480).y());
+
+		// アイコンを出さない効果ではずらさない
+		singleplayer.getServer().runOnServer(server -> {
+			ServerPlayer player = server.getPlayerList().getPlayers().getFirst();
+			player.removeAllEffects();
+			player.addEffect(new MobEffectInstance(MobEffects.POISON, 2000, 0, false, false, false));
+		});
+		context.waitTicks(3);
+		assertEquals("map with a hidden effect", 7, frame(context, "effect-hidden", 854, 480).y());
+
+		singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst().removeAllEffects());
+		context.waitTicks(3);
+		assertEquals("map without effects", 7, frame(context, "effect-none", 854, 480).y());
 	}
 
 	// F1 と F3 では出さない
@@ -459,6 +495,9 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.waitTicks(MAP_REFRESH_TICKS);
 
 		assertPins(NETHER);
+		// 実績のトーストは一時的に地図に重なるので消しておく
+		context.runOnClient(client -> client.gui.toastManager().clear());
+		context.waitTicks(3);
 		Map map = map(context, "nether", 854, 480);
 		map.assertBlockRelative(10, 0, MapColor.GOLD);
 		map.assertBlockRelative(-10, 10, MapColor.GOLD);
