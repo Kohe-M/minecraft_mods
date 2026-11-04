@@ -80,13 +80,16 @@ public final class Pins {
 		}
 	}
 
+	public void remove(Pin pin) {
+		if (pins.remove(pin)) {
+			save();
+		}
+	}
+
 	// 同じ次元で origin に一番近いピンを抜く。なければ false
 	public boolean removeNearest(Pin origin) {
 		Optional<Pin> nearest = in(origin.dimension()).stream().min(Comparator.comparingLong(origin::distanceSquared));
-		nearest.ifPresent(pin -> {
-			pins.remove(pin);
-			save();
-		});
+		nearest.ifPresent(this::remove);
 		return nearest.isPresent();
 	}
 

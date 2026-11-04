@@ -6,25 +6,22 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.client.renderer.RenderPipelines;
-import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
 // GUI スケールの設定に左右されないよう、ウィンドウの実ピクセルを単位に描く
 final class MinimapHud {
-	private static final Identifier ARROW = Identifier.fromNamespaceAndPath("minimap", "arrow");
-	private static final Identifier PIN = Identifier.fromNamespaceAndPath("minimap", "pin");
+	private static final int VIEW = 128;
+	// 表示は直前の tick から補間するので、速く動いても見えている範囲を描き終えているよう広めに持つ
+	private static final int TERRAIN_SIZE = VIEW + 16;
+
+	static final MapTerrain TERRAIN = new MapTerrain("terrain", TERRAIN_SIZE);
 
 	private static final int FRAME_COLOR = 0xFF0B0D12;
 	private static final int FADED_PIN_ALPHA = 0xA0;
-
-	// 以下は 1 ブロックの大きさを単位にした長さ
+	// 1 ブロックを単位にした余白
 	private static final int MARGIN = 8;
-	private static final int ARROW_SIZE = 13;
-	private static final int PIN_WIDTH = 9;
-	private static final int PIN_HEIGHT = 13;
 
 	// 短辺の 1/4 前後になる。地図がぼやけないよう 1 ブロックは整数ピクセルにする
 	static int pixelsPerBlock(int windowWidth, int windowHeight) {
@@ -41,7 +38,7 @@ final class MinimapHud {
 
 		Window window = client.getWindow();
 		int unit = pixelsPerBlock(window.getWidth(), window.getHeight());
-		int size = MapTerrain.VIEW * unit;
+		int size = VIEW * unit;
 		float partialTick = delta.getGameTimeDeltaPartialTick(false);
 		Vec3 position = player.getPosition(partialTick);
 		// 地図の左上のワールド座標（実ピクセル）
@@ -57,22 +54,22 @@ final class MinimapHud {
 		for (Pins.Pin pin : MinimapClient.PINS.in(player.level().dimension().identifier())) {
 			pin(graphics, pin, left, top, size, unit);
 		}
-		arrow(graphics, player.getViewYRot(partialTick), size, unit);
+		MapIcons.arrow(graphics, size / 2f, size / 2f, player.getViewYRot(partialTick), unit);
 
 		graphics.pose().popMatrix();
 	}
 
 	private static void terrain(GuiGraphicsExtractor graphics, int left, int top, int size, int unit) {
-		float period = MapTerrain.SIZE * unit;
-		float u = Math.floorMod(left, MapTerrain.SIZE * unit) / period;
-		float v = Math.floorMod(top, MapTerrain.SIZE * unit) / period;
+		float period = TERRAIN_SIZE * unit;
+		float u = Math.floorMod(left, TERRAIN_SIZE * unit) / period;
+		float v = Math.floorMod(top, TERRAIN_SIZE * unit) / period;
 		float span = size / period;
-		graphics.blit(MapTerrain.TEXTURE, 0, 0, size, size, u, u + span, v, v + span);
+		graphics.blit(TERRAIN.texture, 0, 0, size, size, u, u + span, v, v + span);
 	}
 
 	private static void pin(GuiGraphicsExtractor graphics, Pins.Pin pin, int left, int top, int size, int unit) {
-		int width = PIN_WIDTH * unit;
-		int height = PIN_HEIGHT * unit;
+		int width = MapIcons.PIN_WIDTH * unit;
+		int height = MapIcons.PIN_HEIGHT * unit;
 		float half = size / 2f;
 		float dx = Mth.floor((pin.x() + 0.5) * unit) - left - half;
 		float dy = Mth.floor((pin.z() + 0.5) * unit) - top - half;
@@ -90,17 +87,7 @@ final class MinimapHud {
 		int tipY = Math.round(half + dy * reach);
 
 		int color = inside ? pin.color() : ARGB.color(FADED_PIN_ALPHA, pin.color());
-		graphics.blitSprite(RenderPipelines.GUI_TEXTURED, PIN, tipX - width / 2, tipY - height, width, height, color);
-	}
-
-	private static void arrow(GuiGraphicsExtractor graphics, float yaw, int size, int unit) {
-		int arrowSize = ARROW_SIZE * unit;
-		graphics.pose().pushMatrix();
-		graphics.pose().translate(size / 2f, size / 2f);
-		// yaw は南が 0 で時計回り、矢印の絵は北向き
-		graphics.pose().rotate((yaw - 180) * Mth.DEG_TO_RAD);
-		graphics.blitSprite(RenderPipelines.GUI_TEXTURED, ARROW, -arrowSize / 2, -arrowSize / 2, arrowSize, arrowSize);
-		graphics.pose().popMatrix();
+		MapIcons.pin(graphics, tipX, tipY, width, height, color);
 	}
 
 	private MinimapHud() {

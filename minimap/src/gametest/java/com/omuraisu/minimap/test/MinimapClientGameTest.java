@@ -8,7 +8,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.omuraisu.minimap.client.MapScreen;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.client.Pins;
 
@@ -41,6 +43,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static final int FEET_Y = FLOOR_Y + 1;
 
 	private static final int FRAME_COLOR = 0xFF0B0D12;
+	private static final int EMPTY_COLOR = 0xFF1A1E26;
 	// 全列を描き直すのにかかる時間より長く待つ
 	private static final int MAP_REFRESH_TICKS = 45;
 
@@ -56,6 +59,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testTerrain(context, singleplayer);
 			testHidden(context);
 			testPins(context, singleplayer);
+			testMapScreen(context, singleplayer);
 			testNether(context, singleplayer);
 			if (FabricLoader.getInstance().isModLoaded("iris")) {
 				testShaderPack(context, singleplayer);
@@ -89,6 +93,12 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			context.getInput().resizeWindow(1920, 1080);
 			context.waitTicks(MAP_REFRESH_TICKS);
 			frame(context, "natural-terrain", 1920, 1080);
+
+			toggleMap(context);
+			moveCursorAway(context);
+			context.waitTicks(MAP_REFRESH_TICKS);
+			context.takeScreenshot("natural-map");
+			toggleMap(context);
 		}
 		context.getInput().resizeWindow(854, 480);
 		context.waitTicks(3);
@@ -223,6 +233,217 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPins(OVERWORLD, first);
 	}
 
+	private static void testMapScreen(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		Pins.Pin first = new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z);
+		int playerX = PLAYER_X + 5;
+		int playerZ = PLAYER_Z + 5;
+		teleport(context, singleplayer, playerX, playerZ);
+
+		// M と Esc で閉じる
+		assertMapOpen(context, false);
+		toggleMap(context);
+		assertMapOpen(context, true);
+		toggleMap(context);
+		assertMapOpen(context, false);
+		toggleMap(context);
+		assertMapOpen(context, true);
+		context.getInput().pressKey(InputConstants.KEY_ESCAPE);
+		context.waitTicks(2);
+		assertMapOpen(context, false);
+
+		toggleMap(context);
+		moveCursorAway(context);
+		context.waitTicks(MAP_REFRESH_TICKS);
+		assertScale(context, 2);
+
+		// ワールドの位置どおりに出る。全画面なのでミニマップは隠れる
+		ScreenView view = new ScreenView(854, 480, 2, playerX, playerZ);
+		view.assertBlock(context, "map-open", SEAM, SEAM, MapColor.FIRE);
+		view.assertBlock(context, "map-open-stone", SEAM + 3, SEAM, MapColor.STONE);
+		view.assertPin(context, "map-open-pin", first);
+		assertNoFrame(context, "map-no-minimap");
+
+		// 地図を開いている間はピンのキーが効かない
+		context.getInput().pressKey(MinimapClient.placeKey);
+		context.getInput().pressKey(MinimapClient.removeKey);
+		context.waitTicks(2);
+		assertPins(OVERWORLD, first);
+
+		// クリックで刺して、同じ場所のクリックで抜く
+		Pins.Pin clicked = new Pins.Pin(OVERWORLD, playerX + 20, playerZ - 10);
+		click(context, view.x(clicked.x()), view.y(clicked.z()));
+		assertPins(OVERWORLD, first, clicked);
+		view.assertPin(context, "map-pin-placed", clicked);
+		click(context, view.x(clicked.x()), view.y(clicked.z()));
+		assertPins(OVERWORLD, first);
+
+		// ピンの頭を押しても抜ける
+		click(context, view.x(first.x()) + 2, view.y(first.z()) - 8);
+		assertPins(OVERWORLD);
+		click(context, view.x(first.x()), view.y(first.z()));
+		assertPins(OVERWORLD, first);
+
+		// ドラッグは地図を動かすだけでピンは刺さらない
+		context.getInput().setCursorPos(300, 300);
+		context.waitTick();
+		context.getInput().holdMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		context.getInput().setCursorPos(360, 340);
+		context.waitTick();
+		context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		moveCursorAway(context);
+		assertPins(OVERWORLD, first);
+		view = view.panned(60, 40);
+		view.assertBlock(context, "map-dragged", SEAM, SEAM, MapColor.FIRE);
+
+		// ホイールではカーソルの下の地点が動かない
+		int anchorX = view.x(SEAM);
+		int anchorY = view.y(SEAM);
+		context.getInput().setCursorPos(anchorX, anchorY);
+		context.waitTick();
+		context.getInput().scroll(1);
+		context.waitTick();
+		assertScale(context, 4);
+		moveCursorAway(context);
+		view = new ScreenView(854, 480, 4.0, SEAM + 0.5 - (anchorX - 427) / 4.0, SEAM + 0.5 - (anchorY - 240) / 4.0);
+		view.assertBlock(context, "map-zoomed", SEAM + 1, SEAM + 1, MapColor.FIRE);
+		view.assertBlock(context, "map-zoomed-stone", SEAM + 3, SEAM, MapColor.STONE);
+
+		// 倍率には上限と下限がある
+		scroll(context, 3);
+		assertScale(context, 8);
+		scroll(context, -8);
+		assertScale(context, 0.25);
+
+		// 開き直すと自分の位置に戻り、倍率は保つ
+		toggleMap(context);
+		toggleMap(context);
+		assertScale(context, 0.25);
+		moveCursorAway(context);
+
+		// 読み込まれていない遠くにも刺せて、地形がないところは背景の色になる
+		assertPixel(context, "map-far-background", 20, 20, EMPTY_COLOR);
+		Pins.Pin far = new Pins.Pin(OVERWORLD, playerX + 1600, playerZ);
+		click(context, 427 + 400, 240);
+		assertPins(OVERWORLD, first, far);
+		click(context, 427 + 400, 240);
+		assertPins(OVERWORLD, first);
+
+		scroll(context, 3);
+		assertScale(context, 2);
+
+		// GUI スケールや解像度を変えても、開いたままクリック位置が合う
+		toggleMap(context);
+		toggleMap(context);
+		int guiScale = context.computeOnClient(client -> client.options.guiScale().get());
+		context.getInput().resizeWindow(1920, 1080);
+		context.waitTicks(3);
+		for (int scale : new int[] {1, 3}) {
+			setGuiScale(context, scale);
+			moveCursorAway(context);
+			assertScale(context, 4);
+			ScreenView large = new ScreenView(1920, 1080, 4, playerX, playerZ);
+			large.assertBlock(context, "map-1080p-gui" + scale, SEAM, SEAM, MapColor.FIRE);
+			Pins.Pin scaled = new Pins.Pin(OVERWORLD, playerX + 30, playerZ + 12);
+			click(context, large.x(scaled.x()), large.y(scaled.z()));
+			assertPins(OVERWORLD, first, scaled);
+			click(context, large.x(scaled.x()), large.y(scaled.z()));
+			assertPins(OVERWORLD, first);
+		}
+		setGuiScale(context, guiScale);
+		context.getInput().resizeWindow(854, 480);
+		context.waitTicks(3);
+
+		toggleMap(context);
+		assertMapOpen(context, false);
+		frame(context, "map-closed", 854, 480);
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+	}
+
+	private static void toggleMap(ClientGameTestContext context) {
+		context.getInput().pressKey(MinimapClient.mapKey);
+		context.waitTicks(2);
+	}
+
+	private static void click(ClientGameTestContext context, int x, int y) {
+		context.getInput().setCursorPos(x, y);
+		context.waitTick();
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		moveCursorAway(context);
+	}
+
+	private static void scroll(ClientGameTestContext context, int steps) {
+		for (int i = 0; i < Math.abs(steps); i++) {
+			context.getInput().scroll(Math.signum(steps));
+			context.waitTick();
+		}
+	}
+
+	// ホバーで大きくなったピンがカーソルの下に残らないようにする
+	private static void moveCursorAway(ClientGameTestContext context) {
+		context.getInput().setCursorPos(1, 1);
+		context.waitTick();
+	}
+
+	private static void assertMapOpen(ClientGameTestContext context, boolean open) {
+		boolean actual = context.computeOnClient(client -> client.gui.screen() instanceof MapScreen);
+		if (actual != open) {
+			throw new AssertionError("map screen open should be " + open + " but was " + actual);
+		}
+	}
+
+	private static void assertScale(ClientGameTestContext context, double expected) {
+		double actual = context.computeOnClient(client -> ((MapScreen) client.gui.screen()).scale());
+		if (actual != expected) {
+			throw new AssertionError("map scale should be " + expected + " but was " + actual);
+		}
+	}
+
+	private static void assertPixel(ClientGameTestContext context, String name, int x, int y, int expected) {
+		int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(x, y));
+		if (pixel != expected) {
+			throw new AssertionError(name + ": expected " + Integer.toHexString(expected) + " at " + x + ", " + y
+					+ " but was " + Integer.toHexString(pixel));
+		}
+	}
+
+	// マップ画面の座標。テストでは実装に頼らず自分で計算する
+	private record ScreenView(int width, int height, double scale, double centerX, double centerZ) {
+		ScreenView(int width, int height, int scale, int playerX, int playerZ) {
+			this(width, height, (double) scale, playerX + 0.5, playerZ + 0.5);
+		}
+
+		ScreenView panned(int dx, int dy) {
+			return new ScreenView(width, height, scale, centerX - dx / scale, centerZ - dy / scale);
+		}
+
+		int x(int blockX) {
+			return (int) Math.floor(width / 2.0 + (blockX + 0.5 - centerX) * scale);
+		}
+
+		int y(int blockZ) {
+			return (int) Math.floor(height / 2.0 + (blockZ + 0.5 - centerZ) * scale);
+		}
+
+		void assertBlock(ClientGameTestContext context, String name, int blockX, int blockZ, MapColor color) {
+			int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(x(blockX), y(blockZ)));
+			for (MapColor.Brightness brightness : MapColor.Brightness.values()) {
+				if (ARGB.opaque(color.calculateARGBColor(brightness)) == pixel) {
+					return;
+				}
+			}
+			throw new AssertionError(name + ": block " + blockX + ", " + blockZ + " should have map color " + color.col
+					+ " but pixel was " + Integer.toHexString(pixel));
+		}
+
+		void assertPin(ClientGameTestContext context, String name, Pins.Pin pin) {
+			int unit = Math.max(1, Math.round(Math.min(width, height) / 540f));
+			assertPixel(context, name, x(pin.x()) + 2 * unit, y(pin.z()) - 8 * unit, pin.color());
+		}
+	}
+
 	// 天井ではなく足元を映す。ピンは次元ごとに分かれる
 	private static void testNether(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		singleplayer.getServer().runOnServer(server -> {
@@ -253,6 +474,18 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPins(NETHER);
 		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
 
+		// マップ画面でも足元を映し、今いる次元に刺さる
+		toggleMap(context);
+		moveCursorAway(context);
+		ScreenView view = new ScreenView(854, 480, 2, 0, 0);
+		view.assertBlock(context, "map-nether", 10, 5, MapColor.GOLD);
+		click(context, view.x(10), view.y(5));
+		assertPins(NETHER, new Pins.Pin(NETHER, 10, 5));
+		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
+		click(context, view.x(10), view.y(5));
+		assertPins(NETHER);
+		toggleMap(context);
+
 		singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst()
 				.teleportTo(server.overworld(), PLAYER_X + 0.5, FEET_Y, PLAYER_Z + 0.5, Set.of(), 0, 0, true));
 		context.waitTicks(20);
@@ -270,6 +503,13 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			Map map = map(context, "shader-pack", 854, 480);
 			map.assertBlock(SEAM, SEAM, MapColor.FIRE);
 			map.assertPin(new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
+
+			toggleMap(context);
+			moveCursorAway(context);
+			ScreenView view = new ScreenView(854, 480, 2, PLAYER_X + 25, PLAYER_Z);
+			view.assertBlock(context, "shader-pack-map", SEAM, SEAM, MapColor.FIRE);
+			view.assertPin(context, "shader-pack-map-pin", new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
+			toggleMap(context);
 		} finally {
 			context.runOnClient(client -> IrisPack.disable());
 			context.waitTicks(20);

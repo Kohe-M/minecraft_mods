@@ -22,8 +22,7 @@ public class MinimapClient implements ClientModInitializer {
 
 	public static KeyMapping placeKey;
 	public static KeyMapping removeKey;
-
-	private static final MapTerrain TERRAIN = new MapTerrain();
+	public static KeyMapping mapKey;
 
 	@Override
 	public void onInitializeClient() {
@@ -32,6 +31,8 @@ public class MinimapClient implements ClientModInitializer {
 				"key.minimap.place_pin", InputConstants.Type.KEYBOARD, InputConstants.KEY_B, category));
 		removeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.minimap.remove_pin", InputConstants.Type.KEYBOARD, InputConstants.KEY_N, category));
+		mapKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.minimap.open_map", InputConstants.Type.KEYBOARD, InputConstants.KEY_M, category));
 
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "map"), MinimapHud::extract);
 
@@ -41,7 +42,7 @@ public class MinimapClient implements ClientModInitializer {
 	}
 
 	private static void tick(Minecraft client) {
-		TERRAIN.tick(client);
+		MinimapHud.TERRAIN.tick(client);
 
 		LocalPlayer player = client.player;
 		if (player == null) {
@@ -55,6 +56,9 @@ public class MinimapClient implements ClientModInitializer {
 			player.sendOverlayMessage(Component.translatable(PINS.removeNearest(Pins.Pin.at(player))
 					? "message.minimap.pin_removed"
 					: "message.minimap.no_pins"));
+		}
+		while (mapKey.consumeClick()) {
+			client.gui.setScreen(new MapScreen());
 		}
 	}
 
