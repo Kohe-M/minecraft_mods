@@ -3,6 +3,7 @@
 	"key.minimap.place_pin": "ピンを刺す",
 	"key.minimap.remove_pin": "一番近いピンを抜く",
 	"key.minimap.open_map": "マップを開く",
+	"gui.minimap.pin_name": "ピンの名前",
 	"message.minimap.pin_placed": "ピンを刺しました",
 	"message.minimap.pin_removed": "ピンを抜きました",
 	"message.minimap.no_pins": "ピンがありません"

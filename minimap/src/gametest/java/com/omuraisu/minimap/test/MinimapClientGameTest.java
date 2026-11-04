@@ -20,6 +20,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -63,6 +64,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testEffects(context, singleplayer);
 			testPins(context, singleplayer);
 			testMapScreen(context, singleplayer);
+			testPinNames(context, singleplayer, save);
 			testNether(context, singleplayer);
 			if (FabricLoader.getInstance().isModLoaded("iris")) {
 				testShaderPack(context, singleplayer);
@@ -70,10 +72,10 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 
 		// 開き直してもピンが残っている。壊れた行は読み飛ばす
-		appendPinFile(save, "broken line\nminecraft:overworld abc 1\n");
+		appendPinFile(save, "broken line\nminecraft:overworld abc 1\nminecraft:overworld 7 8  my  base \n");
 		try (TestSingleplayerContext singleplayer = save.open()) {
 			singleplayer.getConnection().waitForChunksRender();
-			assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
+			assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z), new Pins.Pin(OVERWORLD, 7, 8, "my  base"));
 		}
 
 		// 別のワールドには持ち越さない
@@ -309,6 +311,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		Pins.Pin clicked = new Pins.Pin(OVERWORLD, playerX + 20, playerZ - 10);
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
 		assertPins(OVERWORLD, first, clicked);
+		confirmName(context);
 		view.assertPin(context, "map-pin-placed", clicked);
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
 		assertPins(OVERWORLD, first);
@@ -318,6 +321,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPins(OVERWORLD);
 		click(context, view.x(first.x()), view.y(first.z()));
 		assertPins(OVERWORLD, first);
+		confirmName(context);
 
 		// ドラッグは地図を動かすだけでピンは刺さらない
 		context.getInput().setCursorPos(300, 300);
@@ -363,6 +367,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		Pins.Pin far = new Pins.Pin(OVERWORLD, playerX + 1600, playerZ);
 		click(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first, far);
+		confirmName(context);
 		click(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first);
 
@@ -384,6 +389,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			Pins.Pin scaled = new Pins.Pin(OVERWORLD, playerX + 30, playerZ + 12);
 			click(context, large.x(scaled.x()), large.y(scaled.z()));
 			assertPins(OVERWORLD, first, scaled);
+			confirmName(context);
 			click(context, large.x(scaled.x()), large.y(scaled.z()));
 			assertPins(OVERWORLD, first);
 		}
@@ -395,6 +401,106 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertMapOpen(context, false);
 		frame(context, "map-closed", 854, 480);
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+	}
+
+	private static void testPinNames(ClientGameTestContext context, TestSingleplayerContext singleplayer, TestWorldSave save) {
+		Pins.Pin first = new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z);
+		int x = PLAYER_X + 12;
+		int z = PLAYER_Z + 8;
+		teleport(context, singleplayer, PLAYER_X + 2, PLAYER_Z - 25);
+		ScreenView view = new ScreenView(854, 480, 2, PLAYER_X + 2, PLAYER_Z - 25);
+		toggleMap(context);
+		moveCursorAway(context);
+
+		// 刺すとそのまま名前を入力できる。M も文字として入り、地図は閉じない
+		click(context, view.x(x), view.y(z));
+		assertPins(OVERWORLD, first, new Pins.Pin(OVERWORLD, x, z));
+		context.getInput().typeChars("m 拠点");
+		context.getInput().pressKey(MinimapClient.mapKey);
+		context.waitTicks(2);
+		assertMapOpen(context, true);
+		confirmName(context);
+		Pins.Pin named = new Pins.Pin(OVERWORLD, x, z, "m 拠点");
+		assertPins(OVERWORLD, first, named);
+		assertMapOpen(context, true);
+		assertPinFileContains(save, "minecraft:overworld " + x + " " + z + " m 拠点\n");
+		view.assertPin(context, "pin-named", named);
+
+		// 右クリックで変更できる
+		rightClick(context, view.x(x), view.y(z));
+		context.getInput().typeChars("2");
+		confirmName(context);
+		Pins.Pin renamed = new Pins.Pin(OVERWORLD, x, z, "m 拠点2");
+		assertPins(OVERWORLD, first, renamed);
+
+		// Esc は入力だけを取り消して、地図は閉じない
+		rightClick(context, view.x(x), view.y(z));
+		context.getInput().typeChars("x");
+		context.getInput().pressKey(InputConstants.KEY_ESCAPE);
+		context.waitTicks(2);
+		assertMapOpen(context, true);
+		assertPins(OVERWORLD, first, renamed);
+
+		// 外を押すと確定するだけで、新しいピンは刺さらない
+		rightClick(context, view.x(x), view.y(z));
+		context.getInput().typeChars("3");
+		click(context, 40, 400);
+		Pins.Pin clicked = new Pins.Pin(OVERWORLD, x, z, "m 拠点23");
+		assertPins(OVERWORLD, first, clicked);
+
+		// 入力中にウィンドウの大きさが変わっても文字は残る
+		rightClick(context, view.x(x), view.y(z));
+		context.getInput().resizeWindow(1000, 600);
+		context.waitTicks(3);
+		context.getInput().typeChars("4");
+		confirmName(context);
+		context.getInput().resizeWindow(854, 480);
+		context.waitTicks(3);
+		assertPins(OVERWORLD, first, new Pins.Pin(OVERWORLD, x, z, "m 拠点234"));
+
+		// 空白だけの名前は名前なしになる
+		rightClick(context, view.x(x), view.y(z));
+		context.runOnClient(client -> {
+			((EditBox) client.gui.screen().getFocused()).setValue("   ");
+		});
+		confirmName(context);
+		Pins.Pin blank = new Pins.Pin(OVERWORLD, x, z);
+		assertPins(OVERWORLD, first, blank);
+
+		// 名前付きのスクリーンショットを残して片付ける
+		rightClick(context, view.x(x), view.y(z));
+		context.getInput().typeChars("Base 拠点");
+		confirmName(context);
+		context.takeScreenshot("pin-name-label");
+		click(context, view.x(x), view.y(z));
+		assertPins(OVERWORLD, first);
+
+		toggleMap(context);
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+	}
+
+	private static void confirmName(ClientGameTestContext context) {
+		context.getInput().pressKey(InputConstants.KEY_RETURN);
+		context.waitTicks(2);
+	}
+
+	private static void rightClick(ClientGameTestContext context, int x, int y) {
+		context.getInput().setCursorPos(x, y);
+		context.waitTick();
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_RIGHT);
+		context.waitTick();
+		moveCursorAway(context);
+	}
+
+	private static void assertPinFileContains(TestWorldSave save, String line) {
+		try {
+			String actual = Files.readString(save.getSaveDirectory().resolve("minimap_pins.txt"));
+			if (!actual.contains(line)) {
+				throw new AssertionError("pin file should contain " + line + " but was " + actual);
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
 	}
 
 	private static void toggleMap(ClientGameTestContext context) {
@@ -520,6 +626,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		view.assertBlock(context, "map-nether", 10, 5, MapColor.GOLD);
 		click(context, view.x(10), view.y(5));
 		assertPins(NETHER, new Pins.Pin(NETHER, 10, 5));
+		confirmName(context);
 		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
 		click(context, view.x(10), view.y(5));
 		assertPins(NETHER);

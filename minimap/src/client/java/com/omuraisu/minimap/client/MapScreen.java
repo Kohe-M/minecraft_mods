@@ -6,6 +6,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -15,13 +16,18 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
-// 読み込まれている範囲の全画面マップ。ドラッグで移動、ホイールで拡大縮小、クリックでピンを抜き差しする。
-// ミニマップと同じく GUI スケールに左右されないよう、位置は実ピクセルで扱う
+// 読み込まれている範囲の全画面マップ。ドラッグで移動、ホイールで拡大縮小、
+// 左クリックでピンの抜き差し、右クリックでピンの名前の変更をする。
+// ミニマップと同じく GUI スケールに左右されないよう、地図の上の位置は実ピクセルで扱う
 public class MapScreen extends Screen {
 	private static final int MIN_ZOOM = -2;
 	private static final int MAX_ZOOM = 3;
 	// これより動かしたらクリックではなくドラッグとして扱う（実ピクセル）
 	private static final double DRAG_THRESHOLD = 4;
+
+	private static final int NAME_MAX_LENGTH = 32;
+	private static final int NAME_BOX_WIDTH = 120;
+	private static final int NAME_BOX_HEIGHT = 18;
 
 	// 開き直しても倍率は保つ
 	private static int zoom = 1;
@@ -32,21 +38,28 @@ public class MapScreen extends Screen {
 	private boolean pressed;
 	private double dragDistance;
 
+	// 名前を入力している間だけ持つ
+	private Pins.Pin editing;
+	private EditBox nameBox;
+
 	public MapScreen() {
 		super(Component.translatable("key.minimap.open_map"));
 	}
 
 	@Override
 	protected void init() {
-		if (terrain != null || minecraft.player == null) {
-			return;
+		if (terrain == null && minecraft.player != null) {
+			Vec3 position = minecraft.player.position();
+			centerX = position.x;
+			centerZ = position.z;
+			// クライアントが持ち得るチャンクがすべて入る大きさ
+			terrain = new MapTerrain("terrain_large", (minecraft.options.getEffectiveRenderDistance() + 1) * 2 * 16);
+			terrain.tick(minecraft);
 		}
-		Vec3 position = minecraft.player.position();
-		centerX = position.x;
-		centerZ = position.z;
-		// クライアントが持ち得るチャンクがすべて入る大きさ
-		terrain = new MapTerrain("terrain_large", (minecraft.options.getEffectiveRenderDistance() + 1) * 2 * 16);
-		terrain.tick(minecraft);
+		// ウィンドウの大きさが変わると作り直されるので、入力中の文字を引き継ぐ
+		if (editing != null) {
+			addNameBox(nameBox != null ? nameBox.getValue() : editing.name());
+		}
 	}
 
 	@Override
@@ -58,6 +71,9 @@ public class MapScreen extends Screen {
 
 	@Override
 	public void removed() {
+		if (editing != null) {
+			finishEditing(true);
+		}
 		if (terrain != null) {
 			terrain.release(minecraft);
 			terrain = null;
@@ -71,47 +87,61 @@ public class MapScreen extends Screen {
 
 	// 実ピクセル / ブロック
 	public double scale() {
-		Window window = minecraft.getWindow();
-		return MinimapHud.pixelsPerBlock(window.getWidth(), window.getHeight()) * Math.pow(2, zoom);
+		return unit() * Math.pow(2, zoom);
 	}
 
+	private int unit() {
+		Window window = minecraft.getWindow();
+		return MinimapHud.pixelsPerBlock(window.getWidth(), window.getHeight());
+	}
+
+	// 入力欄より奥に描くので背景の段で描く
 	@Override
 	public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
 		graphics.fill(0, 0, width, height, MapTerrain.EMPTY_COLOR);
-	}
-
-	@Override
-	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
-		super.extractRenderState(graphics, mouseX, mouseY, delta);
 		LocalPlayer player = minecraft.player;
 		if (player == null || terrain == null) {
 			return;
 		}
 
-		Window window = minecraft.getWindow();
-		int unit = MinimapHud.pixelsPerBlock(window.getWidth(), window.getHeight());
-		int guiScale = window.getGuiScale();
+		int unit = unit();
+		int guiScale = minecraft.getWindow().getGuiScale();
+		int pinWidth = MapIcons.PIN_WIDTH * unit;
+		int pinHeight = MapIcons.PIN_HEIGHT * unit;
 
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(1f / guiScale);
 
 		terrain(graphics);
 
-		Pins.Pin hovered = pinAt(mouseX * guiScale, mouseY * guiScale);
+		Pins.Pin hovered = nameBox != null ? null : pinAt(mouseX * guiScale, mouseY * guiScale);
 		for (Pins.Pin pin : pins()) {
-			int width = MapIcons.PIN_WIDTH * unit;
-			int height = MapIcons.PIN_HEIGHT * unit;
-			if (pin.equals(hovered)) {
-				width = width * 5 / 4;
-				height = height * 5 / 4;
+			if (pin.equals(hovered) || pin.equals(editing)) {
+				MapIcons.pin(graphics, tipX(pin), tipY(pin), pinWidth * 5 / 4, pinHeight * 5 / 4, pin.color());
+			} else {
+				MapIcons.pin(graphics, tipX(pin), tipY(pin), pinWidth, pinHeight, pin.color());
 			}
-			MapIcons.pin(graphics, tipX(pin), tipY(pin), width, height, pin.color());
 		}
 
 		Vec3 position = player.getPosition(delta);
 		MapIcons.arrow(graphics, (float) screenX(position.x), (float) screenY(position.z), player.getViewYRot(delta), unit);
 
 		graphics.pose().popMatrix();
+
+		// 文字はプレイヤーの GUI スケールに合わせる
+		for (Pins.Pin pin : pins()) {
+			if (!pin.name().isEmpty() && !pin.equals(editing)) {
+				MapIcons.label(graphics, font, pin.name(), tipX(pin) / guiScale, (tipY(pin) - pinHeight) / guiScale - MapIcons.LABEL_HEIGHT);
+			}
+		}
+	}
+
+	@Override
+	public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+		if (nameBox != null) {
+			positionNameBox();
+		}
+		super.extractRenderState(graphics, mouseX, mouseY, delta);
 	}
 
 	// 地形があるところだけに重ね、外は背景の色のままにする
@@ -166,8 +196,7 @@ public class MapScreen extends Screen {
 
 	// 重なっているときは手前（後に描く方）を選ぶ
 	private Pins.Pin pinAt(double x, double y) {
-		Window window = minecraft.getWindow();
-		int unit = MinimapHud.pixelsPerBlock(window.getWidth(), window.getHeight());
+		int unit = unit();
 		List<Pins.Pin> pins = pins();
 		for (int i = pins.size() - 1; i >= 0; i--) {
 			Pins.Pin pin = pins.get(i);
@@ -186,11 +215,58 @@ public class MapScreen extends Screen {
 			return;
 		}
 		Identifier dimension = minecraft.level.dimension().identifier();
-		MinimapClient.PINS.place(new Pins.Pin(dimension, Mth.floor(worldX(x)), Mth.floor(worldZ(y))));
+		Pins.Pin placed = new Pins.Pin(dimension, Mth.floor(worldX(x)), Mth.floor(worldZ(y)));
+		MinimapClient.PINS.place(placed);
+		startEditing(placed);
+	}
+
+	private void startEditing(Pins.Pin pin) {
+		editing = pin;
+		addNameBox(pin.name());
+	}
+
+	private void addNameBox(String value) {
+		nameBox = new EditBox(font, 0, 0, NAME_BOX_WIDTH, NAME_BOX_HEIGHT, Component.translatable("gui.minimap.pin_name"));
+		nameBox.setMaxLength(NAME_MAX_LENGTH);
+		nameBox.setValue(value);
+		positionNameBox();
+		addRenderableWidget(nameBox);
+		setInitialFocus(nameBox);
+	}
+
+	// ピンの右に出し、画面からはみ出すときは内側に寄せる
+	private void positionNameBox() {
+		int guiScale = minecraft.getWindow().getGuiScale();
+		int unit = unit();
+		int x = (tipX(editing) + MapIcons.PIN_WIDTH * unit) / guiScale;
+		int y = (tipY(editing) - MapIcons.PIN_HEIGHT * unit) / guiScale;
+		nameBox.setX(Mth.clamp(x, 0, Math.max(0, width - NAME_BOX_WIDTH)));
+		nameBox.setY(Mth.clamp(y, 0, Math.max(0, height - NAME_BOX_HEIGHT)));
+	}
+
+	private void finishEditing(boolean keep) {
+		if (keep) {
+			MinimapClient.PINS.rename(editing, nameBox.getValue());
+		}
+		removeWidget(nameBox);
+		setFocused(null);
+		nameBox = null;
+		editing = null;
 	}
 
 	@Override
 	public boolean keyPressed(KeyEvent event) {
+		if (nameBox != null) {
+			if (event.key() == InputConstants.KEY_RETURN || event.key() == InputConstants.KEY_NUMPADENTER) {
+				finishEditing(true);
+			} else if (event.key() == InputConstants.KEY_ESCAPE) {
+				finishEditing(false);
+			} else {
+				// 入力中は M などの操作キーも文字として扱う
+				super.keyPressed(event);
+			}
+			return true;
+		}
 		if (MinimapClient.mapKey.matches(event)) {
 			onClose();
 			return true;
@@ -200,6 +276,14 @@ public class MapScreen extends Screen {
 
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+		if (nameBox != null) {
+			if (nameBox.isMouseOver(event.x(), event.y())) {
+				return super.mouseClicked(event, doubleClick);
+			}
+			// 外を押したら確定するだけで、地図の操作にはしない
+			finishEditing(true);
+			return true;
+		}
 		if (MinimapClient.mapKey.matchesMouse(event)) {
 			onClose();
 			return true;
@@ -207,6 +291,14 @@ public class MapScreen extends Screen {
 		if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
 			pressed = true;
 			dragDistance = 0;
+			return true;
+		}
+		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
+			double guiScale = minecraft.getWindow().getGuiScale();
+			Pins.Pin pin = pinAt(event.x() * guiScale, event.y() * guiScale);
+			if (pin != null) {
+				startEditing(pin);
+			}
 			return true;
 		}
 		return super.mouseClicked(event, doubleClick);
