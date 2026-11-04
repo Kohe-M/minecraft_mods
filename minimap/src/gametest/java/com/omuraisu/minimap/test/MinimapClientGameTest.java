@@ -20,6 +20,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
+import net.minecraft.client.CloudStatus;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
@@ -65,6 +66,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testPins(context, singleplayer);
 			testMapScreen(context, singleplayer);
 			testPinNames(context, singleplayer, save);
+			testBeams(context, singleplayer);
 			testNether(context, singleplayer);
 			if (FabricLoader.getInstance().isModLoaded("iris")) {
 				testShaderPack(context, singleplayer);
@@ -503,6 +505,118 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 	}
 
+	private static void testBeams(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		context.runOnClient(client -> client.options.cloudStatus().set(CloudStatus.OFF));
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+
+		// 近くのピン
+		Pins.Pin near = new Pins.Pin(OVERWORLD, PLAYER_X + 25, PLAYER_Z - 20);
+		lookAtHorizon(context, near);
+		assertBeamVisible(context, "beam-near", near);
+
+		// 読み込まれていない遠くのピンも方角が分かる
+		Pins.Pin far = new Pins.Pin(OVERWORLD, PLAYER_X - 2000, PLAYER_Z + 1000);
+		lookAtHorizon(context, far);
+		assertBeamVisible(context, "beam-far", far);
+
+		// 違う次元のピンは出ない
+		Pins.Pin nether = new Pins.Pin(NETHER, far.x(), far.z());
+		assertEquals("beam from another dimension", 0, beamPixels(context, "beam-other-dimension", nether));
+
+		// F1 では出ない
+		context.runOnClient(client -> client.gui.hud.toggle());
+		assertEquals("beam with hidden hud", 0, beamPixels(context, "beam-hidden", far));
+		context.runOnClient(client -> client.gui.hud.toggle());
+
+		// 名前は柱に添えて出る。名前がなければ出ない
+		Pins.Pin named = new Pins.Pin(OVERWORLD, near.x(), near.z(), "Base");
+		lookAtHorizon(context, near);
+		int guiScale = context.computeOnClient(client -> client.getWindow().getGuiScale());
+		context.runOnClient(client -> MinimapClient.PINS.place(near));
+		context.waitTicks(2);
+		assertEquals("label of an unnamed pin", 0, labelPixels(context, "label-unnamed", guiScale));
+		context.runOnClient(client -> MinimapClient.PINS.rename(near, named.name()));
+		context.waitTicks(2);
+		if (labelPixels(context, "label-named", guiScale) == 0) {
+			throw new AssertionError("name of the pin should be drawn beside the beam");
+		}
+
+		// 真後ろのピンの名前は出ない
+		context.getInput().lookAt(new BlockPos(PLAYER_X - 25, FEET_Y + 1, PLAYER_Z + 20));
+		context.waitTicks(3);
+		assertEquals("label behind the camera", 0, labelPixels(context, "label-behind", guiScale));
+
+		context.runOnClient(client -> MinimapClient.PINS.remove(named));
+		context.waitTicks(2);
+		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
+	}
+
+	// カメラと同じ高さでピンの方を向く。地平線より上の空を背景に柱を読み取れる
+	private static void lookAtHorizon(ClientGameTestContext context, Pins.Pin pin) {
+		context.getInput().lookAt(new BlockPos(pin.x(), FEET_Y + 1, pin.z()));
+		context.waitTicks(3);
+	}
+
+	private static void assertBeamVisible(ClientGameTestContext context, String name, Pins.Pin pin) {
+		int pixels = beamPixels(context, name, pin);
+		if (pixels == 0) {
+			throw new AssertionError(name + ": beam should be visible at the center of the screen");
+		}
+	}
+
+	// ピンがあるときとないときで、画面の中央の列で色が変わるピクセルの数。外れた列は変わらない
+	private static int beamPixels(ClientGameTestContext context, String name, Pins.Pin pin) {
+		context.runOnClient(client -> MinimapClient.PINS.place(pin));
+		context.waitTicks(3);
+		Path with = context.takeScreenshot(name + "-with");
+		context.runOnClient(client -> MinimapClient.PINS.remove(pin));
+		context.waitTicks(3);
+		Path without = context.takeScreenshot(name + "-without");
+		return readImage(with, withImage -> readImage(without, withoutImage -> {
+			int width = withImage.getWidth();
+			int height = withImage.getHeight();
+			int top = height / 8;
+			int bottom = height * 3 / 8;
+			int off = differingPixels(withImage, withoutImage, width / 2 + 100, width / 2 + 120, top, bottom);
+			if (off != 0) {
+				throw new AssertionError(name + ": pixels away from the beam changed: " + off);
+			}
+			return differingPixels(withImage, withoutImage, width / 2 - 10, width / 2 + 10, top, bottom);
+		}));
+	}
+
+	private static int differingPixels(NativeImage a, NativeImage b, int left, int right, int top, int bottom) {
+		int count = 0;
+		for (int y = top; y < bottom; y++) {
+			for (int x = left; x < right; x++) {
+				int p = a.getPixel(x, y);
+				int q = b.getPixel(x, y);
+				int difference = Math.abs(ARGB.red(p) - ARGB.red(q)) + Math.abs(ARGB.green(p) - ARGB.green(q)) + Math.abs(ARGB.blue(p) - ARGB.blue(q));
+				if (difference >= 8) {
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
+	// 照準のすぐ上にある名前の文字（白）のピクセルの数
+	private static int labelPixels(ClientGameTestContext context, String name, int guiScale) {
+		return readImage(context.takeScreenshot(name), image -> {
+			int count = 0;
+			int centerX = image.getWidth() / 2;
+			int centerY = image.getHeight() / 2;
+			for (int y = centerY - 15 * guiScale; y < centerY - 6 * guiScale; y++) {
+				for (int x = centerX - 30 * guiScale; x < centerX + 30 * guiScale; x++) {
+					if (image.getPixel(x, y) == 0xFFFFFFFF) {
+						count++;
+					}
+				}
+			}
+			return count;
+		});
+	}
+
 	private static void toggleMap(ClientGameTestContext context) {
 		context.getInput().pressKey(MinimapClient.mapKey);
 		context.waitTicks(2);
@@ -656,6 +770,10 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			view.assertBlock(context, "shader-pack-map", SEAM, SEAM, MapColor.FIRE);
 			view.assertPin(context, "shader-pack-map-pin", new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
 			toggleMap(context);
+
+			Pins.Pin beam = new Pins.Pin(OVERWORLD, PLAYER_X + 45, PLAYER_Z - 20);
+			lookAtHorizon(context, beam);
+			assertBeamVisible(context, "shader-pack-beam", beam);
 		} finally {
 			context.runOnClient(client -> IrisPack.disable());
 			context.waitTicks(20);
