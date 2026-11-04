@@ -1,0 +1,13 @@
+{
+	"required": true,
+	"package": "com.omuraisu.fullbright.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"CommonUniformsMixin",
+		"LightmapRenderStateExtractorMixin",
+		"MouseHandlerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

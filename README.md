@@ -2,6 +2,7 @@
 
 | mod | | クライアント | サーバー |
 |---|---|:---:|:---:|
+| [fullbright](fullbright) | 明るさ上限突破（Sodium / Iris 対応） | 必須 | 不要 |
 | [sorter](sorter) | インベントリ・チェストのソートボタン | 必須 | 必須 |
 | [timber](timber) | 一括伐採 | 任意（G キーでオン/オフ） | 必須 |
 | [xray](xray) | 鉱石透視（Sodium / Iris 対応） | 必須 | 不要 |
@@ -16,10 +17,11 @@ minecraft_mods/
 ├─ gradle.properties    MC バージョンセット（MC・Loader・Loom・Fabric API・Java・Sodium・Iris）
 ├─ build.gradle         全 mod 共通のビルド設定
 ├─ settings.gradle      mod の登録
-├─ sorter/
+├─ fullbright/
 │  ├─ gradle.properties mod_version
 │  ├─ build.gradle      その mod だけの設定
 │  └─ src/
+├─ sorter/
 ├─ timber/
 ├─ xray/
 └─ zoom/

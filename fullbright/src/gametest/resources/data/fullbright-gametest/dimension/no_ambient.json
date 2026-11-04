@@ -1,0 +1,15 @@
+{
+	"type": "fullbright-gametest:no_ambient",
+	"generator": {
+		"type": "minecraft:flat",
+		"settings": {
+			"biome": "minecraft:plains",
+			"layers": [
+				{
+					"block": "minecraft:stone",
+					"height": 64
+				}
+			]
+		}
+	}
+}

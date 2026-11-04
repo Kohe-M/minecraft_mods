@@ -1,0 +1,6 @@
+{
+	"key.category.fullbright.main": "明るさ上限突破",
+	"key.fullbright.toggle": "明るさ上限突破の切り替え（長押し + ホイールで調整）",
+	"message.fullbright.enabled": "明るさ: %s%%",
+	"message.fullbright.disabled": "明るさ: 通常"
+}

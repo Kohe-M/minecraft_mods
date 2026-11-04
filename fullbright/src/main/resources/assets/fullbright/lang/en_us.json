@@ -1,0 +1,6 @@
+{
+	"key.category.fullbright.main": "Fullbright",
+	"key.fullbright.toggle": "Toggle Fullbright (hold + wheel to adjust)",
+	"message.fullbright.enabled": "Brightness: %s%%",
+	"message.fullbright.disabled": "Brightness: Normal"
+}

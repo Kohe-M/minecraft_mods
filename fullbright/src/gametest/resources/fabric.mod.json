@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "fullbright-gametest",
+	"version": "1.0.0",
+	"name": "Fullbright GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.fullbright.test.FullbrightClientGameTest"
+		]
+	},
+	"depends": {
+		"fullbright": "*"
+	}
+}
