@@ -11,4 +11,4 @@ pluginManagement {
 
 rootProject.name = 'minecraft_mods'
 
-include 'fullbright', 'sorter', 'timber', 'xray', 'zoom'
+include 'fullbright', 'minimap', 'sorter', 'timber', 'xray', 'zoom'

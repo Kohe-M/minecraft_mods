@@ -1,0 +1,8 @@
+{
+	"key.category.minimap.main": "ミニマップ",
+	"key.minimap.place_pin": "ピンを刺す",
+	"key.minimap.remove_pin": "一番近いピンを抜く",
+	"message.minimap.pin_placed": "ピンを刺しました",
+	"message.minimap.pin_removed": "ピンを抜きました",
+	"message.minimap.no_pins": "ピンがありません"
+}

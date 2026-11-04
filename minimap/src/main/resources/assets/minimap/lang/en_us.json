@@ -1,0 +1,8 @@
+{
+	"key.category.minimap.main": "Minimap",
+	"key.minimap.place_pin": "Place Pin",
+	"key.minimap.remove_pin": "Remove Nearest Pin",
+	"message.minimap.pin_placed": "Pin placed",
+	"message.minimap.pin_removed": "Pin removed",
+	"message.minimap.no_pins": "No pins"
+}

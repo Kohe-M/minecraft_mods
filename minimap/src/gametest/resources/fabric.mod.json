@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "minimap-gametest",
+	"version": "1.0.0",
+	"name": "Minimap GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.minimap.test.MinimapClientGameTest"
+		]
+	},
+	"depends": {
+		"minimap": "*"
+	}
+}

@@ -3,6 +3,7 @@
 | mod | | クライアント | サーバー |
 |---|---|:---:|:---:|
 | [fullbright](fullbright) | 明るさ上限突破（Sodium / Iris 対応） | 必須 | 不要 |
+| [minimap](minimap) | ミニマップとピン（B で刺す、N で一番近いピンを抜く） | 必須 | 不要 |
 | [sorter](sorter) | インベントリ・チェストのソートボタン | 必須 | 必須 |
 | [timber](timber) | 一括伐採 | 任意（G キーでオン/オフ） | 必須 |
 | [xray](xray) | 鉱石透視（Sodium / Iris 対応） | 必須 | 不要 |
@@ -21,6 +22,7 @@ minecraft_mods/
 │  ├─ gradle.properties mod_version
 │  ├─ build.gradle      その mod だけの設定
 │  └─ src/
+├─ minimap/
 ├─ sorter/
 ├─ timber/
 ├─ xray/
