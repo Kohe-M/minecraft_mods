@@ -29,6 +29,8 @@ final class PinBeams {
 	private static final double MAX_DISTANCE_RATIO = 0.75;
 	private static final int V_REPEAT_BLOCKS = 8;
 	private static final int LABEL_GAP = 4;
+	// これより離れると名前を出さない（ブロック）
+	private static final int LABEL_MAX_DISTANCE = 64;
 
 	static void submit(LevelRenderContext context) {
 		Minecraft client = Minecraft.getInstance();
@@ -63,7 +65,7 @@ final class PinBeams {
 		Vec3 camera = client.gameRenderer.mainCamera().position();
 		Vec3 forward = new Vec3(client.gameRenderer.mainCamera().forwardVector());
 		for (Pins.Pin pin : MinimapClient.PINS.in(client.level.dimension().identifier())) {
-			if (pin.name().isEmpty()) {
+			if (pin.name().isEmpty() || !isLabelInRange(pin, camera)) {
 				continue;
 			}
 			Vec3 offset = offsetFromCamera(client, pin, camera);
@@ -79,6 +81,13 @@ final class PinBeams {
 			int y = (int) ((1 - projected.y) / 2 * graphics.guiHeight());
 			MapIcons.label(graphics, client.font, pin.name(), x, y - MapIcons.LABEL_HEIGHT - LABEL_GAP);
 		}
+	}
+
+	// 柱は手前に寄せて描くことがあるので、実際の位置で測る
+	private static boolean isLabelInRange(Pins.Pin pin, Vec3 camera) {
+		double dx = pin.x() + 0.5 - camera.x;
+		double dz = pin.z() + 0.5 - camera.z;
+		return dx * dx + dz * dz <= LABEL_MAX_DISTANCE * LABEL_MAX_DISTANCE;
 	}
 
 	// カメラからピンの柱までの水平の差

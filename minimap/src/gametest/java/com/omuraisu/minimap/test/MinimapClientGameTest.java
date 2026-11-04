@@ -563,6 +563,25 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> MinimapClient.PINS.remove(named));
 		context.waitTicks(2);
 		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
+
+		// 離れると名前は消えるが、柱は残る。近づくとまた出る
+		Pins.Pin distant = new Pins.Pin(OVERWORLD, PLAYER_X + 70, PLAYER_Z, "Far");
+		lookAtHorizon(context, distant);
+		assertBeamVisible(context, "beam-without-label", distant);
+		context.runOnClient(client -> MinimapClient.PINS.place(distant));
+		context.waitTicks(2);
+		assertEquals("label of a distant pin", 0, labelPixels(context, "label-distant", guiScale));
+
+		teleport(context, singleplayer, PLAYER_X + 10, PLAYER_Z);
+		lookAtHorizon(context, distant);
+		if (labelPixels(context, "label-in-range", guiScale) == 0) {
+			throw new AssertionError("name of the pin should be drawn within range");
+		}
+
+		context.runOnClient(client -> MinimapClient.PINS.remove(distant));
+		context.waitTicks(2);
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
 	}
 
 	// カメラと同じ高さでピンの方を向く。地平線より上の空を背景に柱を読み取れる
