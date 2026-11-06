@@ -64,14 +64,14 @@ public class SorterClientGameTest implements FabricClientGameTest {
 
 			singleplayer.getServer().runOnServer(server -> {
 				Inventory inventory = server.getPlayerList().getPlayers().getFirst().getInventory();
-				assertStack(chest.getItem(0), new ItemStack(Items.DIRT, 7));
-				assertStack(chest.getItem(1), new ItemStack(Items.COBBLESTONE, 64));
-				assertStack(chest.getItem(2), new ItemStack(Items.COBBLESTONE, 6));
-				assertStack(chest.getItem(3), new ItemStack(Items.OAK_LOG, 12));
-				assertStack(chest.getItem(4), new ItemStack(Items.DIAMOND, 3));
+				assertStack(chest.getItem(0), new ItemStack(Items.DIAMOND, 3));
+				assertStack(chest.getItem(9), new ItemStack(Items.OAK_LOG, 12));
+				assertStack(chest.getItem(10), new ItemStack(Items.COBBLESTONE, 64));
+				assertStack(chest.getItem(11), new ItemStack(Items.COBBLESTONE, 6));
+				assertStack(chest.getItem(12), new ItemStack(Items.DIRT, 7));
 				assertStack(inventory.getItem(0), new ItemStack(Items.IRON_PICKAXE));
-				assertStack(inventory.getItem(9), new ItemStack(Items.TORCH, 30));
-				assertStack(inventory.getItem(10), new ItemStack(Items.BREAD, 14));
+				assertStack(inventory.getItem(9), new ItemStack(Items.BREAD, 14));
+				assertStack(inventory.getItem(10), new ItemStack(Items.TORCH, 30));
 			});
 
 			// スロット欄の間が一番狭い画面
@@ -80,6 +80,11 @@ public class SorterClientGameTest implements FabricClientGameTest {
 			context.waitForScreen(ShulkerBoxScreen.class);
 			context.waitTicks(2);
 			context.takeScreenshot("sorter-shulker");
+
+			List<SortEvaluation.Scenario> scenarios = SortEvaluation.scenarios();
+			for (int i = 0; i < scenarios.size(); i++) {
+				screenshotScenario(context, singleplayer, scenarios.get(i), "sorter-scenario-" + i);
+			}
 
 			context.setScreen(() -> null);
 			context.runOnClient(client -> client.gui.setScreen(new InventoryScreen(client.player)));
@@ -90,6 +95,24 @@ public class SorterClientGameTest implements FabricClientGameTest {
 			clickButton(context, false, 0);
 			context.takeScreenshot("sorter-inventory-recipe-book");
 		}
+	}
+
+	// 並びの見た目を確かめるための、場面ごとのソート後の画面
+	private static void screenshotScenario(ClientGameTestContext context, TestSingleplayerContext singleplayer, SortEvaluation.Scenario scenario, String screenshot) {
+		SimpleContainer chest = new SimpleContainer(scenario.capacity());
+		for (int i = 0; i < scenario.stacks().size(); i++) {
+			chest.setItem(i, scenario.stacks().get(i).copy());
+		}
+		context.setScreen(() -> null);
+		singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst().openMenu(new SimpleMenuProvider(
+				(id, inv, p) -> scenario.capacity() == 54 ? ChestMenu.sixRows(id, inv, chest) : ChestMenu.threeRows(id, inv, chest),
+				Component.literal(scenario.name()))));
+		context.waitForScreen(ContainerScreen.class);
+		context.waitTicks(2);
+		clickButton(context, true, 0);
+		context.getInput().setCursorPos(0, 0);
+		context.waitTicks(2);
+		context.takeScreenshot(screenshot);
 	}
 
 	private static void assertStack(ItemStack actual, ItemStack expected) {
