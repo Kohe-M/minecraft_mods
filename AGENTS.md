@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Fabric mod（fullbright / minimap / sorter / timber / xray / zoom）を `mods/` にまとめ、1つの Gradle マルチプロジェクトで管理するリポジトリ。構成は [README.md](README.md)。
+Fabric mod（fullbright / minimap / placer / sorter / timber / xray / zoom）を `mods/` にまとめ、1つの Gradle マルチプロジェクトで管理するリポジトリ。構成は [README.md](README.md)。
 
 ## バージョン
 
@@ -64,7 +64,7 @@ Conventional Commits 形式で、日本語で書く。
 | `build` | Gradle・依存・MC バージョンの更新 |
 | `chore` | その他 |
 
-- scope は mod 名（`fullbright` / `minimap` / `sorter` / `timber` / `xray` / `zoom`）。複数の mod やリポジトリ全体に関わるときは省く
+- scope は mod 名（`fullbright` / `minimap` / `placer` / `sorter` / `timber` / `xray` / `zoom`）。複数の mod やリポジトリ全体に関わるときは省く
 - 1コミットで扱う mod は1つ。共通設定の変更と mod の変更は分ける
 - 件名は体言止めで50字程度まで。句点は付けない
 - MC 更新は `build: Minecraft 26.4 に対応`、リリースは `chore(sorter): 1.1.0 をリリース`
@@ -84,7 +84,7 @@ build: Fabric API を 0.166.0+26.3 に更新
 ```bash
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 ./gradlew build                                         # ビルド + server ゲームテスト（sorter, timber）
-./gradlew :fullbright:runClientGameTest :minimap:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
+./gradlew :fullbright:runClientGameTest :minimap:runClientGameTest :placer:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
 ./gradlew :xray:runClient                                # -PnoSodium でバニラ描画
 ```
 
@@ -142,6 +142,18 @@ Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動�
 - ゲームテスト
   - 他のプレイヤーは `FakePlayer` で作る。tick されないので、ロケーターバーのデータを送らせるには `baseTick()` と `trackWaypoint` を呼ぶ
   - 専用サーバーのテストは、テスト環境の `eula.txt` に同意を書き込み、空いているポートで起動する
+
+## placer の仕様
+
+クライアントのみで動く。サーバー側の mod は不要。J キーで有効・無効を切り替え、`config/placer.txt` に保存する。無効ならバニラと同じ。
+
+- 補正するのは 1 回の長押しの間の連続設置だけ。押した瞬間の設置はバニラのまま（押し直せば積める）
+- 長押しで最初に置けたブロックの面から層を決める。上面に置いたら同じ高さ、側面に置いたらその面に平行な 1 枚だけに置く。草などを置き換えたときは上面の扱い
+- 同じ長押しの中で同じマスには 1 回しか試さない（ハーフブロックが重なってフルブロックになるのも防ぐ）
+- 視線が自分の置いたブロックに当たっている間は置かない。例外は、当たった面の向きへ前回の設置から 0.5 ブロック以上動いていて、置き先がプレイヤーから 1 ブロック以内のとき（スニークでの橋渡し、ジャンプでの塔）
+- 置けないマス（体と重なるなど）は試さない。置けるマスに狙いが移ったら 4 tick を待たずに置く。ただし押してから 4 tick はバニラと同じに待つ（軽く押しただけで 2 個置かれないように）
+- 置くのは視線が実際に当たった面だけで、当たり判定は作らない。自分のブロックに隠れたマスには置けない
+- 足場（`ScaffoldingBlockItem`）は上へ伸ばして使うのでバニラのまま。最初の設置がまだなら手に持つものによらずバニラのまま（コンポスターへの連続投入など）
 
 ## sorter の仕様
 
