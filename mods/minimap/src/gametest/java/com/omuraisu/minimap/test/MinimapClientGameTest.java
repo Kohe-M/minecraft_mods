@@ -524,7 +524,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
 
 		// 近くのピン
-		Pins.Pin near = new Pins.Pin(OVERWORLD, PLAYER_X + 25, PLAYER_Z - 20);
+		Pins.Pin near = new Pins.Pin(OVERWORLD, PLAYER_X + 20, PLAYER_Z - 15);
 		lookAtHorizon(context, near);
 		assertBeamVisible(context, "beam-near", near);
 
@@ -556,7 +556,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 
 		// 真後ろのピンの名前は出ない
-		context.getInput().lookAt(new BlockPos(PLAYER_X - 25, FEET_Y + 1, PLAYER_Z + 20));
+		context.getInput().lookAt(new BlockPos(PLAYER_X - 20, FEET_Y + 1, PLAYER_Z + 15));
 		context.waitTicks(3);
 		assertEquals("label behind the camera", 0, labelPixels(context, "label-behind", guiScale));
 
@@ -565,14 +565,14 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
 
 		// 離れると名前は消えるが、柱は残る。近づくとまた出る
-		Pins.Pin distant = new Pins.Pin(OVERWORLD, PLAYER_X + 70, PLAYER_Z, "Far");
+		Pins.Pin distant = new Pins.Pin(OVERWORLD, PLAYER_X + 36, PLAYER_Z, "Far");
 		lookAtHorizon(context, distant);
 		assertBeamVisible(context, "beam-without-label", distant);
 		context.runOnClient(client -> MinimapClient.PINS.place(distant));
 		context.waitTicks(2);
 		assertEquals("label of a distant pin", 0, labelPixels(context, "label-distant", guiScale));
 
-		teleport(context, singleplayer, PLAYER_X + 10, PLAYER_Z);
+		teleport(context, singleplayer, PLAYER_X + 8, PLAYER_Z);
 		lookAtHorizon(context, distant);
 		if (labelPixels(context, "label-in-range", guiScale) == 0) {
 			throw new AssertionError("name of the pin should be drawn within range");

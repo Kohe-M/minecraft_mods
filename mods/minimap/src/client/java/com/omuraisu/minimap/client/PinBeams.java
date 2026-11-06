@@ -30,7 +30,7 @@ final class PinBeams {
 	private static final int V_REPEAT_BLOCKS = 8;
 	private static final int LABEL_GAP = 4;
 	// これより離れると名前を出さない（ブロック）
-	private static final int LABEL_MAX_DISTANCE = 64;
+	private static final int LABEL_MAX_DISTANCE = 32;
 
 	static void submit(LevelRenderContext context) {
 		Minecraft client = Minecraft.getInstance();
