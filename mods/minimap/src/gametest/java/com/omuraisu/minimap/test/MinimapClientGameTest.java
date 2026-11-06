@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
 import com.mojang.authlib.GameProfile;
@@ -34,6 +35,7 @@ import net.minecraft.client.CloudStatus;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
@@ -121,9 +123,30 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			moveCursorAway(context);
 			context.waitTicks(MAP_REFRESH_TICKS);
 			context.takeScreenshot("natural-map");
+
+			// 日本語でも操作の説明が出る
+			String english = context.computeOnClient(client -> client.options.languageCode);
+			setLanguage(context, "ja_jp");
+			String hint = context.computeOnClient(client -> Component.translatable("gui.minimap.hint_remove").getString());
+			if (!hint.contains("左クリック")) {
+				throw new AssertionError("hint should be in Japanese but was " + hint);
+			}
+			assertHints(context, "natural-map-ja", true);
+			setLanguage(context, english);
+
 			toggleMap(context);
 		}
 		context.getInput().resizeWindow(854, 480);
+		context.waitTicks(3);
+	}
+
+	private static void setLanguage(ClientGameTestContext context, String language) {
+		CompletableFuture<Void> reload = context.computeOnClient(client -> {
+			client.getLanguageManager().setSelected(language);
+			client.options.languageCode = language;
+			return client.reloadResourcePacks();
+		});
+		context.waitFor(client -> reload.isDone() && client.gui.overlay() == null);
 		context.waitTicks(3);
 	}
 
@@ -317,17 +340,35 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		view.assertPin(context, "map-open-pin", first);
 		assertNoFrame(context, "map-no-minimap");
 
-		// クリックで刺して、同じ場所のクリックで抜く
+		// 刺す・抜く操作が左下に出る。名前の入力中は隠れる
+		assertHints(context, "map-hints", true);
+
+		// 左クリックで刺す
 		Pins.Pin clicked = new Pins.Pin(OVERWORLD, playerX + 20, playerZ - 10);
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
 		assertPins(OVERWORLD, first, clicked);
+		assertHints(context, "map-hints-editing", false);
 		confirmName(context);
+		assertHints(context, "map-hints-restored", true);
 		view.assertPin(context, "map-pin-placed", clicked);
+
+		// ピンの上の左クリックでは、抜けず、増えず、入力も始まらない。頭を押しても同じ
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
+		click(context, view.x(clicked.x()) + 2, view.y(clicked.z()) - 8);
+		assertPins(OVERWORLD, first, clicked);
+		assertNotEditing(context);
+
+		// Shift + 左クリックで抜く
+		shiftClick(context, view.x(clicked.x()), view.y(clicked.z()));
 		assertPins(OVERWORLD, first);
 
+		// 何もないところの Shift + 左クリックでは刺さらない
+		shiftClick(context, view.x(clicked.x()), view.y(clicked.z()));
+		assertPins(OVERWORLD, first);
+		assertNotEditing(context);
+
 		// ピンの頭を押しても抜ける
-		click(context, view.x(first.x()) + 2, view.y(first.z()) - 8);
+		shiftClick(context, view.x(first.x()) + 2, view.y(first.z()) - 8);
 		assertPins(OVERWORLD);
 		click(context, view.x(first.x()), view.y(first.z()));
 		assertPins(OVERWORLD, first);
@@ -346,6 +387,26 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPins(OVERWORLD, first);
 		view = view.panned(60, 40);
 		view.assertBlock(context, "map-dragged", SEAM, SEAM, MapColor.FIRE);
+
+		// ピンの上から Shift を押してドラッグしても、抜けずに地図が動く
+		int dragX = view.x(first.x());
+		int dragY = view.y(first.z());
+		context.getInput().setCursorPos(dragX, dragY);
+		context.waitTick();
+		context.getInput().holdShift();
+		context.waitTick();
+		context.getInput().holdMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		context.getInput().setCursorPos(dragX - 30, dragY + 20);
+		context.waitTick();
+		context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		context.getInput().releaseShift();
+		context.waitTick();
+		moveCursorAway(context);
+		assertPins(OVERWORLD, first);
+		view = view.panned(-30, 20);
+		view.assertBlock(context, "map-shift-dragged", SEAM, SEAM, MapColor.FIRE);
 
 		// ホイールではカーソルの下の地点が動かない
 		int anchorX = view.x(SEAM);
@@ -378,7 +439,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		click(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first, far);
 		confirmName(context);
-		click(context, 427 + 400, 240);
+		shiftClick(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first);
 
 		scroll(context, 3);
@@ -400,7 +461,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			click(context, large.x(scaled.x()), large.y(scaled.z()));
 			assertPins(OVERWORLD, first, scaled);
 			confirmName(context);
-			click(context, large.x(scaled.x()), large.y(scaled.z()));
+			shiftClick(context, large.x(scaled.x()), large.y(scaled.z()));
 			assertPins(OVERWORLD, first);
 		}
 		setGuiScale(context, guiScale);
@@ -482,7 +543,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.getInput().typeChars("Base 拠点");
 		confirmName(context);
 		context.takeScreenshot("pin-name-label");
-		click(context, view.x(x), view.y(z));
+		shiftClick(context, view.x(x), view.y(z));
 		assertPins(OVERWORLD, first);
 
 		toggleMap(context);
@@ -874,6 +935,48 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 	}
 
+	private static void shiftClick(ClientGameTestContext context, int x, int y) {
+		context.getInput().setCursorPos(x, y);
+		context.waitTick();
+		context.getInput().holdShift();
+		context.waitTick();
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		context.getInput().releaseShift();
+		context.waitTick();
+		moveCursorAway(context);
+	}
+
+	private static void assertNotEditing(ClientGameTestContext context) {
+		boolean editing = context.computeOnClient(client -> client.gui.screen().getFocused() != null);
+		if (editing) {
+			throw new AssertionError("name box should not be open");
+		}
+	}
+
+	// 左下の操作の説明を 1 行ずつ読む。文字は真っ白で、地形や背景には出ない色
+	private static void assertHints(ClientGameTestContext context, String name, boolean visible) {
+		int guiScale = context.computeOnClient(client -> client.getWindow().getGuiScale());
+		readImage(context.takeScreenshot(name), image -> {
+			int rowHeight = 11 * guiScale;
+			int bottom = image.getHeight() - 4 * guiScale;
+			for (int row = 1; row <= 2; row++) {
+				int pixels = 0;
+				for (int y = bottom - row * rowHeight; y < bottom - (row - 1) * rowHeight; y++) {
+					for (int x = 0; x < 200 * guiScale; x++) {
+						if (image.getPixel(x, y) == 0xFFFFFFFF) {
+							pixels++;
+						}
+					}
+				}
+				if (visible != (pixels > 0)) {
+					throw new AssertionError(name + ": hint row " + row + " should be " + (visible ? "shown" : "hidden") + " but had " + pixels + " pixels");
+				}
+			}
+			return null;
+		});
+	}
+
 	private static void toggleMap(ClientGameTestContext context) {
 		context.getInput().pressKey(MinimapClient.mapKey);
 		context.waitTicks(2);
@@ -995,7 +1098,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPins(NETHER, new Pins.Pin(NETHER, 10, 5));
 		confirmName(context);
 		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
-		click(context, view.x(10), view.y(5));
+		shiftClick(context, view.x(10), view.y(5));
 		assertPins(NETHER);
 		toggleMap(context);
 

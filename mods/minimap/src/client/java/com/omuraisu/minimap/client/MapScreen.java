@@ -17,7 +17,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
 // 読み込まれている範囲の全画面マップ。ドラッグで移動、ホイールで拡大縮小、
-// 左クリックでピンの抜き差し、右クリックでピンの名前の変更をする。
+// 左クリックでピンを刺し、Shift + 左クリックで抜き、右クリックで名前を変える。
 // ミニマップと同じく GUI スケールに左右されないよう、地図の上の位置は実ピクセルで扱う
 public class MapScreen extends Screen {
 	private static final int MIN_ZOOM = -2;
@@ -29,6 +29,11 @@ public class MapScreen extends Screen {
 	private static final int NAME_BOX_WIDTH = 120;
 	private static final int NAME_BOX_HEIGHT = 18;
 
+	private static final List<Component> HINTS = List.of(
+			Component.translatable("gui.minimap.hint_place"),
+			Component.translatable("gui.minimap.hint_remove"));
+	private static final int HINT_MARGIN = 4;
+
 	// 開き直しても倍率は保つ
 	private static int zoom = 1;
 
@@ -37,6 +42,7 @@ public class MapScreen extends Screen {
 	private double centerZ;
 	private boolean pressed;
 	private double dragDistance;
+	private boolean removing;
 
 	// 名前を入力している間だけ持つ
 	private Pins.Pin editing;
@@ -148,6 +154,20 @@ public class MapScreen extends Screen {
 					: (faces[i][1] - (MapIcons.FACE_SIZE + 2) * unit / 2) / guiScale - MapIcons.LABEL_HEIGHT;
 			MapIcons.label(graphics, font, markers.get(i).name(), faces[i][0] / guiScale, labelTop);
 		}
+
+		// 入力中のクリックは確定にしかならないので、操作の説明は出さない
+		if (nameBox == null) {
+			hints(graphics);
+		}
+	}
+
+	private void hints(GuiGraphicsExtractor graphics) {
+		int top = height - HINT_MARGIN - HINTS.size() * MapIcons.LABEL_HEIGHT;
+		for (Component hint : HINTS) {
+			String text = hint.getString();
+			MapIcons.label(graphics, font, text, HINT_MARGIN + font.width(text) / 2, top);
+			top += MapIcons.LABEL_HEIGHT;
+		}
 	}
 
 	// 画面の外の相手は方角を保って縁に寄せる。描いた中心の位置を返す
@@ -239,10 +259,16 @@ public class MapScreen extends Screen {
 		return null;
 	}
 
-	private void togglePin(double x, double y) {
+	// ピンの位置を確かめようとして抜かないよう、抜くのは Shift を押しているときだけにする
+	private void click(double x, double y) {
 		Pins.Pin pin = pinAt(x, y);
+		if (removing) {
+			if (pin != null) {
+				MinimapClient.PINS.remove(pin);
+			}
+			return;
+		}
 		if (pin != null) {
-			MinimapClient.PINS.remove(pin);
 			return;
 		}
 		Identifier dimension = minecraft.level.dimension().identifier();
@@ -322,6 +348,7 @@ public class MapScreen extends Screen {
 		if (event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
 			pressed = true;
 			dragDistance = 0;
+			removing = minecraft.hasShiftDown();
 			return true;
 		}
 		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
@@ -357,7 +384,7 @@ public class MapScreen extends Screen {
 		pressed = false;
 		if (dragDistance < DRAG_THRESHOLD) {
 			double guiScale = minecraft.getWindow().getGuiScale();
-			togglePin(event.x() * guiScale, event.y() * guiScale);
+			click(event.x() * guiScale, event.y() * guiScale);
 		}
 		return true;
 	}

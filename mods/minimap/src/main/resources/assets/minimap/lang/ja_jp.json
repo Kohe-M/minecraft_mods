@@ -1,5 +1,7 @@
 {
 	"key.category.minimap.main": "ミニマップ",
 	"key.minimap.open_map": "マップを開く",
-	"gui.minimap.pin_name": "ピンの名前"
+	"gui.minimap.pin_name": "ピンの名前",
+	"gui.minimap.hint_place": "左クリック: ピンを刺す",
+	"gui.minimap.hint_remove": "Shift + 左クリック: ピンを抜く"
 }

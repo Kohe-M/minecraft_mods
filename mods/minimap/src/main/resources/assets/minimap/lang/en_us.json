@@ -1,5 +1,7 @@
 {
 	"key.category.minimap.main": "Minimap",
 	"key.minimap.open_map": "Open Map",
-	"gui.minimap.pin_name": "Pin Name"
+	"gui.minimap.pin_name": "Pin Name",
+	"gui.minimap.hint_place": "Left Click: Place Pin",
+	"gui.minimap.hint_remove": "Shift + Left Click: Remove Pin"
 }
