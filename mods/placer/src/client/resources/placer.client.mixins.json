@@ -1,0 +1,12 @@
+{
+	"required": true,
+	"package": "com.omuraisu.placer.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"BlockItemInvoker",
+		"MinecraftMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

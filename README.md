@@ -4,6 +4,7 @@
 |---|---|:---:|:---:|
 | [fullbright](mods/fullbright) | 明るさ上限突破（Sodium / Iris 対応） | 必須 | 不要 |
 | [minimap](mods/minimap) | ミニマップとピン（M のマップ画面で左クリックで刺す、Shift + 左クリックで抜く、ピンの位置に光の柱、他のプレイヤーも表示） | 必須 | 不要 |
+| [placer](mods/placer) | 長押しの連続設置で積み上がりやズレを防ぐ（J キーでオン/オフ） | 必須 | 不要 |
 | [refill](mods/refill) | 手に持ったアイテムを使い切ると、インベントリの同じアイテムをすぐに補充 | 必須 | 不要 |
 | [sorter](mods/sorter) | インベントリ・チェストのソートボタン | 必須 | 必須 |
 | [timber](mods/timber) | 一括伐採 | 任意（G キーでオン/オフ） | 必須 |
@@ -25,6 +26,7 @@ minecraft_mods/
    │  ├─ build.gradle      その mod だけの設定
    │  └─ src/
    ├─ minimap/
+   ├─ placer/
    ├─ refill/
    ├─ sorter/
    ├─ timber/
