@@ -1,0 +1,6 @@
+{
+	"key.category.placer.main": "Placer",
+	"key.placer.toggle": "連続設置の補正の切り替え",
+	"message.placer.enabled": "連続設置の補正: ON",
+	"message.placer.disabled": "連続設置の補正: OFF"
+}

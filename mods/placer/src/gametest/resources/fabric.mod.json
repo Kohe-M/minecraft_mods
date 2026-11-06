@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "placer-gametest",
+	"version": "1.0.0",
+	"name": "Placer GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.placer.test.PlacerClientGameTest"
+		]
+	},
+	"depends": {
+		"placer": "*"
+	}
+}
