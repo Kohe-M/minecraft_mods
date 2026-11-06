@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "refill",
+	"version": "${version}",
+	"name": "Refill",
+	"description": "手に持ったアイテムを使い切ると、インベントリの同じアイテムをすぐにその手へ補充します。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/refill/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.omuraisu.refill.client.RefillClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "refill.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	}
+}

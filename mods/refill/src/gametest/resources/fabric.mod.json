@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "refill-gametest",
+	"version": "1.0.0",
+	"name": "Refill GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.refill.test.RefillClientGameTest"
+		]
+	},
+	"depends": {
+		"refill": "*"
+	}
+}
