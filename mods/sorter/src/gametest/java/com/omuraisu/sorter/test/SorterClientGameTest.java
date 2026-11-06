@@ -65,10 +65,10 @@ public class SorterClientGameTest implements FabricClientGameTest {
 			singleplayer.getServer().runOnServer(server -> {
 				Inventory inventory = server.getPlayerList().getPlayers().getFirst().getInventory();
 				assertStack(chest.getItem(0), new ItemStack(Items.DIAMOND, 3));
-				assertStack(chest.getItem(9), new ItemStack(Items.OAK_LOG, 12));
-				assertStack(chest.getItem(10), new ItemStack(Items.COBBLESTONE, 64));
-				assertStack(chest.getItem(11), new ItemStack(Items.COBBLESTONE, 6));
-				assertStack(chest.getItem(12), new ItemStack(Items.DIRT, 7));
+				assertStack(chest.getItem(1), new ItemStack(Items.OAK_LOG, 12));
+				assertStack(chest.getItem(2), new ItemStack(Items.COBBLESTONE, 64));
+				assertStack(chest.getItem(3), new ItemStack(Items.COBBLESTONE, 6));
+				assertStack(chest.getItem(4), new ItemStack(Items.DIRT, 7));
 				assertStack(inventory.getItem(0), new ItemStack(Items.IRON_PICKAXE));
 				assertStack(inventory.getItem(9), new ItemStack(Items.BREAD, 14));
 				assertStack(inventory.getItem(10), new ItemStack(Items.TORCH, 30));
