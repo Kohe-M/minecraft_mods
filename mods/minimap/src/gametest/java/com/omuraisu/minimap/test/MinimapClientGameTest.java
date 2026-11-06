@@ -51,8 +51,8 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static final Identifier OVERWORLD = Level.OVERWORLD.identifier();
 	private static final Identifier NETHER = Level.NETHER.identifier();
 
-	// テクスチャの端（144 の倍数）が通る列に目印を置く
-	private static final int SEAM = 288;
+	// テクスチャの端（176 の倍数）が通る列に目印を置く
+	private static final int SEAM = 352;
 	private static final int PLAYER_X = SEAM + 10;
 	private static final int PLAYER_Z = SEAM + 20;
 	private static final int FLOOR_Y = 150;
@@ -128,12 +128,12 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	// 解像度に合わせて大きくなり、GUI スケールの設定には左右されない
 	private static void testScale(ClientGameTestContext context) {
 		Frame small = frame(context, "scale-480p", 854, 480);
-		assertEquals("map at 854x480", 130, small.size());
+		assertEquals("map at 854x480", 162, small.size());
 		assertEquals("right edge at 854x480", 854 - 7, small.x() + small.size());
 		assertEquals("top edge at 854x480", 7, small.y());
 
 		Frame fullHd = frame(context, "scale-1080p", 1920, 1080);
-		assertEquals("map at 1920x1080", 260, fullHd.size());
+		assertEquals("map at 1920x1080", 324, fullHd.size());
 		assertEquals("right edge at 1920x1080", 1920 - 14, fullHd.x() + fullHd.size());
 		assertEquals("top edge at 1920x1080", 14, fullHd.y());
 
@@ -147,11 +147,11 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 		setGuiScale(context, guiScale);
 
-		assertEquals("map at 2560x1440", 390, frame(context, "scale-1440p", 2560, 1440).size());
-		assertEquals("map at 3840x2160", 520, frame(context, "scale-2160p", 3840, 2160).size());
+		assertEquals("map at 2560x1440", 486, frame(context, "scale-1440p", 2560, 1440).size());
+		assertEquals("map at 3840x2160", 648, frame(context, "scale-2160p", 3840, 2160).size());
 
 		// 縦長のウィンドウでは幅に合わせる
-		assertEquals("map at 1080x1920", 260, frame(context, "scale-portrait", 1080, 1920).size());
+		assertEquals("map at 1080x1920", 324, frame(context, "scale-portrait", 1080, 1920).size());
 
 		context.getInput().resizeWindow(854, 480);
 		context.waitTicks(3);
@@ -732,7 +732,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.waitTicks(20);
 		assertEquals("far player should not be a tracked entity", 1, (int) context.computeOnClient(client -> client.level.players().size()));
 		map = map(context, "player-far", 854, 480);
-		int edge = 64 - 5;
+		int edge = 80 - 5;
 		if (map.pixelRelative(edge, 0) == empty.pixelRelative(edge, 0)) {
 			throw new AssertionError("far player should be drawn at the east edge of the minimap");
 		}
@@ -823,7 +823,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static void testServerPlayers(ClientGameTestContext context, TestDedicatedServerContext server, int x, int z) {
 		int dx = 20;
 		int dz = -12;
-		int edge = 64 - 5;
+		int edge = 80 - 5;
 		Map before = map(context, "server-player-before", 854, 480);
 
 		GameProfile profile = new GameProfile(UUID.nameUUIDFromBytes("minimap-server-test".getBytes(StandardCharsets.UTF_8)), "Steve");
@@ -1138,7 +1138,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				}
 			}
 			int[] player = context.computeOnClient(client -> new int[] {client.player.getBlockX(), client.player.getBlockZ()});
-			return new Map(name, pixels, frame.size() / 130, player[0], player[1]);
+			return new Map(name, pixels, frame.size() / 162, player[0], player[1]);
 		});
 	}
 
@@ -1210,7 +1210,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private record Map(String name, int[][] pixels, int unit, int playerX, int playerZ) {
 		// プレイヤーから offset ブロック離れた列の位置。枠の 1 ブロック分を足す
 		private int pixelAt(int offset) {
-			return unit + 64 * unit + offset * unit;
+			return unit + 80 * unit + offset * unit;
 		}
 
 		void assertBlock(int x, int z, MapColor color) {

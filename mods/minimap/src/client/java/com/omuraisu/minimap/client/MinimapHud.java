@@ -13,7 +13,7 @@ import net.minecraft.world.phys.Vec3;
 
 // GUI スケールの設定に左右されないよう、ウィンドウの実ピクセルを単位に描く
 final class MinimapHud {
-	private static final int VIEW = 128;
+	private static final int VIEW = 160;
 	// 表示は直前の tick から補間するので、速く動いても見えている範囲を描き終えているよう広めに持つ
 	private static final int TERRAIN_SIZE = VIEW + 16;
 
@@ -26,7 +26,7 @@ final class MinimapHud {
 	// 1 ブロックを単位にした余白
 	private static final int MARGIN = 8;
 
-	// 短辺の 1/4 前後になる。地図がぼやけないよう 1 ブロックは整数ピクセルにする
+	// ミニマップが短辺の 3 割前後になる。地図がぼやけないよう 1 ブロックは整数ピクセルにする
 	static int pixelsPerBlock(int windowWidth, int windowHeight) {
 		return Math.max(1, Math.round(Math.min(windowWidth, windowHeight) / 540f));
 	}
