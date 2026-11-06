@@ -1,15 +1,15 @@
 # AGENTS.md
 
-Fabric mod（fullbright / minimap / sorter / timber / xray / zoom）を1つの Gradle マルチプロジェクトで管理するリポジトリ。構成は [README.md](README.md)。
+Fabric mod（fullbright / minimap / sorter / timber / xray / zoom）を `mods/` にまとめ、1つの Gradle マルチプロジェクトで管理するリポジトリ。構成は [README.md](README.md)。
 
 ## バージョン
 
 - MC に依存するバージョン（MC・Loader・Loom・Fabric API・Java・Sodium・Iris など）はルートの `gradle.properties` にだけ書く。mod 側の `build.gradle`・`gradle.properties`・`fabric.mod.json` に直接書かない
 - `fabric.mod.json` の `depends` は `${minecraft_version}`・`${loader_version}`・`${java_version}` で埋める
-- 各 mod のバージョンは `<mod>/gradle.properties` の `mod_version`（SemVer）
+- 各 mod のバージョンは `mods/<mod>/gradle.properties` の `mod_version`（SemVer）
   - 修正は patch、機能追加は minor、設定・挙動の互換を壊す変更は major
   - MC への移植だけなら据え置く（`+<MC>` で区別される）
-- 全 mod 共通の設定はルートの `build.gradle`、その mod だけの設定は `<mod>/build.gradle`
+- 全 mod 共通の設定はルートの `build.gradle`、その mod だけの設定は `mods/<mod>/build.gradle`
 
 ## ブランチ
 
@@ -88,12 +88,12 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 ./gradlew :xray:runClient                                # -PnoSodium でバニラ描画
 ```
 
-- 見た目は `runClientGameTest` のスクリーンショット（`<mod>/build/run/clientGameTest/screenshots`）で確認する
+- 見た目は `runClientGameTest` のスクリーンショット（`mods/<mod>/build/run/clientGameTest/screenshots`）で確認する
 
 ## mod の作り方
 
 - パッケージは `com.omuraisu.<mod>`、mod ID はディレクトリ名と同じにする
-- 新しい mod は `settings.gradle` の `include` に追加し、`<mod>/gradle.properties` に `mod_version` を置く
+- 新しい mod は `mods/<mod>` に作って `settings.gradle` の `include` に追加し、`mods/<mod>/gradle.properties` に `mod_version` を置く
 - 言語ファイルは `en_us.json` と `ja_jp.json` の両方を用意する
 - mod を追加したときや、クライアント・サーバーのどちらに入れるかが変わったときは、README の mod 表（クライアント / サーバー列）を更新する
   - 列の値は `必須` / `任意（入れると何ができるか）` / `不要`
@@ -109,7 +109,7 @@ Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動�
   - Sodium のクラスへの mixin には `@Pseudo` を付けて、Sodium がなくても起動できるようにする
   - Sodium の API は `compileOnly "maven.modrinth:sodium:${sodium_version}"` で参照する
 - Iris でシェーダーパックを有効にしても、表示が崩れたり効果が消えたりしないようにする
-- 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（`xray/build.gradle`・`zoom/build.gradle` 参照）
+- 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（`mods/xray/build.gradle`・`mods/zoom/build.gradle` 参照）
 - Sodium・Iris のバージョンはルートの `gradle.properties` の `sodium_version`・`iris_version`。MC を上げたら一緒に上げる
 
 ## Minecraft 26.3 の注意点

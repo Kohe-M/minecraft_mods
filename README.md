@@ -2,12 +2,12 @@
 
 | mod | | クライアント | サーバー |
 |---|---|:---:|:---:|
-| [fullbright](fullbright) | 明るさ上限突破（Sodium / Iris 対応） | 必須 | 不要 |
-| [minimap](minimap) | ミニマップとピン（B で刺す、N で一番近いピンを抜く、M のマップ画面で抜き差しと名前付け、ピンの位置に光の柱、他のプレイヤーも表示） | 必須 | 不要 |
-| [sorter](sorter) | インベントリ・チェストのソートボタン | 必須 | 必須 |
-| [timber](timber) | 一括伐採 | 任意（G キーでオン/オフ） | 必須 |
-| [xray](xray) | 鉱石透視（Sodium / Iris 対応） | 必須 | 不要 |
-| [zoom](zoom) | 長押しズーム | 必須 | 不要 |
+| [fullbright](mods/fullbright) | 明るさ上限突破（Sodium / Iris 対応） | 必須 | 不要 |
+| [minimap](mods/minimap) | ミニマップとピン（B で刺す、N で一番近いピンを抜く、M のマップ画面で抜き差しと名前付け、ピンの位置に光の柱、他のプレイヤーも表示） | 必須 | 不要 |
+| [sorter](mods/sorter) | インベントリ・チェストのソートボタン | 必須 | 必須 |
+| [timber](mods/timber) | 一括伐採 | 任意（G キーでオン/オフ） | 必須 |
+| [xray](mods/xray) | 鉱石透視（Sodium / Iris 対応） | 必須 | 不要 |
+| [zoom](mods/zoom) | 長押しズーム | 必須 | 不要 |
 
 シングルプレイはクライアントに入れるだけでよい。
 
@@ -18,15 +18,16 @@ minecraft_mods/
 ├─ gradle.properties    MC バージョンセット（MC・Loader・Loom・Fabric API・Java・Sodium・Iris）
 ├─ build.gradle         全 mod 共通のビルド設定
 ├─ settings.gradle      mod の登録
-├─ fullbright/
-│  ├─ gradle.properties mod_version
-│  ├─ build.gradle      その mod だけの設定
-│  └─ src/
-├─ minimap/
-├─ sorter/
-├─ timber/
-├─ xray/
-└─ zoom/
+└─ mods/
+   ├─ fullbright/
+   │  ├─ gradle.properties mod_version
+   │  ├─ build.gradle      その mod だけの設定
+   │  └─ src/
+   ├─ minimap/
+   ├─ sorter/
+   ├─ timber/
+   ├─ xray/
+   └─ zoom/
 ```
 
 成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。
