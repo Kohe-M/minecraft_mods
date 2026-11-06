@@ -13,25 +13,17 @@ import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.storage.LevelResource;
 
 public class MinimapClient implements ClientModInitializer {
 	public static final Pins PINS = new Pins();
 
-	public static KeyMapping placeKey;
-	public static KeyMapping removeKey;
 	public static KeyMapping mapKey;
 
 	@Override
 	public void onInitializeClient() {
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("minimap", "main"));
-		placeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-				"key.minimap.place_pin", InputConstants.Type.KEYBOARD, InputConstants.KEY_B, category));
-		removeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-				"key.minimap.remove_pin", InputConstants.Type.KEYBOARD, InputConstants.KEY_N, category));
 		mapKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.minimap.open_map", InputConstants.Type.KEYBOARD, InputConstants.KEY_M, category));
 
@@ -47,18 +39,8 @@ public class MinimapClient implements ClientModInitializer {
 	private static void tick(Minecraft client) {
 		MinimapHud.TERRAIN.tick(client);
 
-		LocalPlayer player = client.player;
-		if (player == null) {
+		if (client.player == null) {
 			return;
-		}
-		while (placeKey.consumeClick()) {
-			PINS.place(Pins.Pin.at(player));
-			player.sendOverlayMessage(Component.translatable("message.minimap.pin_placed"));
-		}
-		while (removeKey.consumeClick()) {
-			player.sendOverlayMessage(Component.translatable(PINS.removeNearest(Pins.Pin.at(player))
-					? "message.minimap.pin_removed"
-					: "message.minimap.no_pins"));
 		}
 		while (mapKey.consumeClick()) {
 			client.gui.setScreen(new MapScreen());

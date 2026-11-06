@@ -7,6 +7,7 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
@@ -30,6 +31,7 @@ import net.fabricmc.fabric.api.entity.FakePlayer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
 import net.minecraft.client.CloudStatus;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
@@ -235,19 +237,25 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static void testPins(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		assertPins(OVERWORLD);
 
-		// ピンがないときに抜いても何も起きない
-		context.getInput().pressKey(MinimapClient.removeKey);
+		// マップ画面の外でピンを操作するキーはない
+		List<String> keys = context.computeOnClient(client -> Arrays.stream(client.options.keyMappings)
+				.map(KeyMapping::getName)
+				.filter(name -> name.startsWith("key.minimap."))
+				.toList());
+		if (!keys.equals(List.of("key.minimap.open_map"))) {
+			throw new AssertionError("only the map key should be registered but was " + keys);
+		}
+		context.getInput().pressKey(InputConstants.KEY_B);
+		context.getInput().pressKey(InputConstants.KEY_N);
 		context.waitTicks(2);
 		assertPins(OVERWORLD);
 
 		Pins.Pin first = new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z);
-		context.getInput().pressKey(MinimapClient.placeKey);
-		context.waitTicks(2);
+		place(context, first);
 		assertPins(OVERWORLD, first);
 
 		// 同じ場所には増えない
-		context.getInput().pressKey(MinimapClient.placeKey);
-		context.waitTicks(2);
+		place(context, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z, "Other"));
 		assertPins(OVERWORLD, first);
 
 		// 離れると、離れた分だけずれたところに見える
@@ -257,22 +265,10 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.getInput().resizeWindow(854, 480);
 		context.waitTicks(3);
 
-		Pins.Pin second = new Pins.Pin(OVERWORLD, PLAYER_X + 25, PLAYER_Z - 15);
-		context.getInput().pressKey(MinimapClient.placeKey);
-		context.waitTicks(2);
-		assertPins(OVERWORLD, first, second);
-
-		// 抜くのは一番近いピン
-		teleport(context, singleplayer, PLAYER_X + 20, PLAYER_Z - 10);
-		context.getInput().pressKey(MinimapClient.removeKey);
-		context.waitTicks(2);
-		assertPins(OVERWORLD, first);
-		context.takeScreenshot("pin-removed");
-
 		// 範囲外のピンは方角を保って縁に出る。抜くと消えることで確かめる
 		teleport(context, singleplayer, PLAYER_X + 400, PLAYER_Z);
 		int withPin = map(context, "pin-far", 854, 480).farPinPixel();
-		context.getInput().pressKey(MinimapClient.removeKey);
+		context.runOnClient(client -> MinimapClient.PINS.remove(first));
 		context.waitTicks(2);
 		assertPins(OVERWORLD);
 		int withoutPin = map(context, "pin-far-removed", 854, 480).farPinPixel();
@@ -282,9 +278,13 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 		// 開き直しの確認用に 1 本残す
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
-		context.getInput().pressKey(MinimapClient.placeKey);
-		context.waitTicks(2);
+		place(context, first);
 		assertPins(OVERWORLD, first);
+	}
+
+	private static void place(ClientGameTestContext context, Pins.Pin pin) {
+		context.runOnClient(client -> MinimapClient.PINS.place(pin));
+		context.waitTicks(2);
 	}
 
 	private static void testMapScreen(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
@@ -316,12 +316,6 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		view.assertBlock(context, "map-open-stone", SEAM + 3, SEAM, MapColor.STONE);
 		view.assertPin(context, "map-open-pin", first);
 		assertNoFrame(context, "map-no-minimap");
-
-		// 地図を開いている間はピンのキーが効かない
-		context.getInput().pressKey(MinimapClient.placeKey);
-		context.getInput().pressKey(MinimapClient.removeKey);
-		context.waitTicks(2);
-		assertPins(OVERWORLD, first);
 
 		// クリックで刺して、同じ場所のクリックで抜く
 		Pins.Pin clicked = new Pins.Pin(OVERWORLD, playerX + 20, playerZ - 10);
@@ -778,6 +772,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties)) {
 			Pins.Pin pin;
+			Pins.Pin named;
 			try (TestDedicatedServerConnection connection = server.connect()) {
 				connection.waitForChunksRender();
 				context.waitTicks(40);
@@ -786,27 +781,28 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				frame(context, "server-minimap", 854, 480);
 
 				int[] feet = context.computeOnClient(client -> new int[] {client.player.getBlockX(), client.player.getBlockZ()});
-				pin = new Pins.Pin(OVERWORLD, feet[0], feet[1]);
-				context.getInput().pressKey(MinimapClient.placeKey);
-				context.waitTicks(2);
-				assertPins(OVERWORLD, pin);
-				Path file = context.computeOnClient(client -> Pins.serverFile(client.getCurrentServer().ip));
-				assertFileEquals(file, "minecraft:overworld " + feet[0] + " " + feet[1] + "\n");
-
-				// マップ画面で名前を付けて、ファイルに残す
 				toggleMap(context);
 				moveCursorAway(context);
 				context.waitTicks(MAP_REFRESH_TICKS);
 				ScreenView view = new ScreenView(854, 480, 2, feet[0], feet[1]);
-				Pins.Pin clicked = new Pins.Pin(OVERWORLD, feet[0] + 30, feet[1] + 20);
-				click(context, view.x(clicked.x()), view.y(clicked.z()));
-				context.getInput().typeChars("Camp");
+
+				pin = new Pins.Pin(OVERWORLD, feet[0] + 10, feet[1] - 8);
+				click(context, view.x(pin.x()), view.y(pin.z()));
 				confirmName(context);
-				assertPins(OVERWORLD, pin, new Pins.Pin(OVERWORLD, clicked.x(), clicked.z(), "Camp"));
+				assertPins(OVERWORLD, pin);
+				Path file = context.computeOnClient(client -> Pins.serverFile(client.getCurrentServer().ip));
+				assertFileEquals(file, "minecraft:overworld " + pin.x() + " " + pin.z() + "\n");
+
+				// 名前も残る
+				named = new Pins.Pin(OVERWORLD, feet[0] + 30, feet[1] + 20, "Camp");
+				click(context, view.x(named.x()), view.y(named.z()));
+				context.getInput().typeChars(named.name());
+				confirmName(context);
+				assertPins(OVERWORLD, pin, named);
 				context.takeScreenshot("server-map");
 				toggleMap(context);
-				assertFileEquals(file, "minecraft:overworld " + feet[0] + " " + feet[1] + "\n"
-						+ "minecraft:overworld " + clicked.x() + " " + clicked.z() + " Camp\n");
+				assertFileEquals(file, "minecraft:overworld " + pin.x() + " " + pin.z() + "\n"
+						+ "minecraft:overworld " + named.x() + " " + named.z() + " Camp\n");
 
 				testServerPlayers(context, server, feet[0], feet[1]);
 			}
@@ -815,7 +811,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			assertPins(OVERWORLD);
 			try (TestDedicatedServerConnection connection = server.connect()) {
 				connection.waitForChunksRender();
-				assertPins(OVERWORLD, pin, new Pins.Pin(OVERWORLD, pin.x() + 30, pin.z() + 20, "Camp"));
+				assertPins(OVERWORLD, pin, named);
 			}
 		}
 	}
@@ -990,18 +986,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		map.assertBlockRelative(10, 0, MapColor.GOLD);
 		map.assertBlockRelative(-10, 10, MapColor.GOLD);
 
-		context.getInput().pressKey(MinimapClient.placeKey);
-		context.waitTicks(2);
-		assertPins(NETHER, new Pins.Pin(NETHER, 0, 0));
-		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
-
-		// ネザーから抜いてもオーバーワールドのピンは残る
-		context.getInput().pressKey(MinimapClient.removeKey);
-		context.waitTicks(2);
-		assertPins(NETHER);
-		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));
-
-		// マップ画面でも足元を映し、今いる次元に刺さる
+		// マップ画面でも足元を映す。ピンは今いる次元に刺さり、抜いても他の次元のピンは残る
 		toggleMap(context);
 		moveCursorAway(context);
 		ScreenView view = new ScreenView(854, 480, 2, 0, 0);

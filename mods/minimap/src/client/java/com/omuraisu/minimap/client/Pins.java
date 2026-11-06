@@ -6,7 +6,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -16,7 +15,6 @@ import org.slf4j.LoggerFactory;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.entity.player.Player;
 
 // 今いるワールドのピン。1 行に「次元 x z 名前」で保存する。名前はなくてもよい
 public final class Pins {
@@ -30,22 +28,12 @@ public final class Pins {
 			this(dimension, x, z, "");
 		}
 
-		public static Pin at(Player player) {
-			return new Pin(player.level().dimension().identifier(), player.getBlockX(), player.getBlockZ());
-		}
-
 		public int color() {
 			return COLORS[Math.floorMod(31 * x + z, COLORS.length)];
 		}
 
 		private boolean samePlace(Pin other) {
 			return dimension.equals(other.dimension) && x == other.x && z == other.z;
-		}
-
-		private long distanceSquared(Pin other) {
-			long dx = x - other.x;
-			long dz = z - other.z;
-			return dx * dx + dz * dz;
 		}
 	}
 
@@ -100,13 +88,6 @@ public final class Pins {
 		if (pins.remove(pin)) {
 			save();
 		}
-	}
-
-	// 同じ次元で origin に一番近いピンを抜く。なければ false
-	public boolean removeNearest(Pin origin) {
-		Optional<Pin> nearest = in(origin.dimension()).stream().min(Comparator.comparingLong(origin::distanceSquared));
-		nearest.ifPresent(this::remove);
-		return nearest.isPresent();
 	}
 
 	private static Optional<Pin> parse(String line) {
