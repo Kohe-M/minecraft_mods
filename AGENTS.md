@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Fabric mod（fullbright / minimap / sorter / timber / xray / zoom）を `mods/` にまとめ、1つの Gradle マルチプロジェクトで管理するリポジトリ。構成は [README.md](README.md)。
+Fabric mod（fullbright / minimap / refill / sorter / timber / xray / zoom）を `mods/` にまとめ、1つの Gradle マルチプロジェクトで管理するリポジトリ。構成は [README.md](README.md)。
 
 ## バージョン
 
@@ -64,7 +64,7 @@ Conventional Commits 形式で、日本語で書く。
 | `build` | Gradle・依存・MC バージョンの更新 |
 | `chore` | その他 |
 
-- scope は mod 名（`fullbright` / `minimap` / `sorter` / `timber` / `xray` / `zoom`）。複数の mod やリポジトリ全体に関わるときは省く
+- scope は mod 名（`fullbright` / `minimap` / `refill` / `sorter` / `timber` / `xray` / `zoom`）。複数の mod やリポジトリ全体に関わるときは省く
 - 1コミットで扱う mod は1つ。共通設定の変更と mod の変更は分ける
 - 件名は体言止めで50字程度まで。句点は付けない
 - MC 更新は `build: Minecraft 26.4 に対応`、リリースは `chore(sorter): 1.1.0 をリリース`
@@ -84,7 +84,7 @@ build: Fabric API を 0.166.0+26.3 に更新
 ```bash
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 ./gradlew build                                         # ビルド + server ゲームテスト（sorter, timber）
-./gradlew :fullbright:runClientGameTest :minimap:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
+./gradlew :fullbright:runClientGameTest :minimap:runClientGameTest :refill:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
 ./gradlew :xray:runClient                                # -PnoSodium でバニラ描画
 ```
 
@@ -142,6 +142,23 @@ Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動�
 - ゲームテスト
   - 他のプレイヤーは `FakePlayer` で作る。tick されないので、ロケーターバーのデータを送らせるには `baseTick()` と `trackWaypoint` を呼ぶ
   - 専用サーバーのテストは、テスト環境の `eula.txt` に同意を書き込み、空いているポートで起動する
+
+## refill の仕様
+
+クライアントのみで動く。サーバー側の mod は不要で、バニラのサーバーでも使える。キー割り当てや設定はない。
+
+- 動作: 使ったアイテムで手が空になったら、同じ tick のうちに補充する。メインハンドもオフハンドも対象
+  - 使ったかどうかは Fabric の `UseBlockCallback`・`UseItemCallback`・`UseEntityCallback` で覚えておき、tick の終わりに手が空かどうかで判定する
+  - 骨粉・繁殖の餌・スポーンエッグなどはサーバーだけが減らすので、手が空になるのは少し後になる。そのため覚えた内容に期限は設けない
+- 補充元: メインインベントリ 27 マスのうち、同じアイテムで一番少ないスタック。`ItemStack.isSameItemSameComponents` で比べる
+  - ホットバーの他のスロットからは取らない（並びを崩さないため）
+  - 名前や耐久値が違うものは別物。壊れた道具は補充しない
+- 補充しない: 手が空になった原因が使用以外のとき
+  - Q・Ctrl + Q・F（`ServerboundPlayerActionPacket` を mixin で見る）、画面を開いている間の移動、持ち替えたスロット
+  - シチューや水バケツのように器が手に残るものは、空にならないので補充しない
+- 補充はインベントリのスワップ（`ContainerInput.SWAP`）。入れ替えるだけなのでアイテムは増減せず、サーバーと食い違っても stateId のずれから全体が同期し直される
+- ゲームテスト: 実際の右クリックで確かめる。シングルプレイと専用サーバーの両方で動かす
+  - 置いた直後の tick に Q を押すと、バニラでも手の個数がサーバーとずれる（Q の予測の後に、置いた分の応答が届いて上書きされ、訂正は来ない）。テストでは同期を待ってから次のキーを押す
 
 ## sorter の仕様
 
