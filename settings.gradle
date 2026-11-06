@@ -12,3 +12,6 @@ pluginManagement {
 rootProject.name = 'minecraft_mods'
 
 include 'fullbright', 'minimap', 'sorter', 'timber', 'xray', 'zoom'
+
+// 実体は mods/ の下。タスク名は :xray:runClient のまま
+rootProject.children.each { it.projectDir = file("mods/${it.name}") }
