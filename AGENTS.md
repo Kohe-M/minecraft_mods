@@ -112,6 +112,37 @@ Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動�
 - 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（`mods/xray/build.gradle`・`mods/zoom/build.gradle` 参照）
 - Sodium・Iris のバージョンはルートの `gradle.properties` の `sodium_version`・`iris_version`。MC を上げたら一緒に上げる
 
+## minimap の仕様
+
+クライアントのみで動く。サーバー側の mod は不要。
+
+- ミニマップ: 画面の右上に、北を上に固定して 160 ブロック四方を出す
+  - 1 ブロックの大きさは実ピクセルで `round(ウィンドウの短辺 / 540)`（最小 1）。GUI スケールの設定には左右されない
+  - ステータス効果のアイコンがあるときはその下に出す。F1 と F3 では隠す
+- マップ画面（M キー）: 全画面の地図。ドラッグで移動、ホイールで拡大縮小
+  - 地形が出るのは読み込み済みのチャンクだけ。歩いた場所の記憶はしない
+  - 倍率はゲームを終えるまで保ち、位置は開くたびに自分に戻す
+- ピンの操作はマップ画面でだけ行う。ゲーム中のキーは M だけ
+
+| 操作 | 場所 | 動作 |
+|---|---|---|
+| 左クリック | 何もないところ | 刺して名前の入力へ。Enter か外のクリックで確定、Esc で入力だけ取り消し |
+| Shift + 左クリック | ピンの上 | 抜く |
+| 右クリック | ピンの上 | 名前の変更 |
+
+  - ピンの上の左クリックと、何もないところの Shift + 左クリックでは何もしない（位置を確かめようとして抜かないため）
+  - 刺す・抜くの操作は画面の左下に出す。名前の入力中は隠す
+- ワールドでの表示: ピンの位置に薄い光の柱を立てる（ビーコンのレンダータイプ）。F1 で隠す
+  - 描画距離の 75% より遠いピンは、方角を保って手前に描く
+  - 名前は 32 ブロック以内でだけ、柱に添えて出す
+- ピンの保存: 1 行に「次元 x z 名前」（名前は省略可）
+  - シングルプレイはセーブの中の `minimap_pins.txt`、マルチプレイは `config/minimap/<URL エンコードしたアドレス>.txt`
+- 他のプレイヤー: ミニマップとマップ画面に顔で出す。透明とスペクテイターは出さない
+  - エンティティとして届いている相手は正確な位置に、届かない相手はロケーターバーのデータ（`ClientPacketListener.getWaypointManager()`）から位置か方角を出す
+- ゲームテスト
+  - 他のプレイヤーは `FakePlayer` で作る。tick されないので、ロケーターバーのデータを送らせるには `baseTick()` と `trackWaypoint` を呼ぶ
+  - 専用サーバーのテストは、テスト環境の `eula.txt` に同意を書き込み、空いているポートで起動する
+
 ## Minecraft 26.3 の注意点
 
 MC を上げたら、この節を新しいバージョンの内容に書き換える。
@@ -120,4 +151,6 @@ MC を上げたら、この節を新しいバージョンの内容に書き換�
 - 描画は `extract*` / `GuiGraphicsExtractor`、画面は `Minecraft.gui.screen()` / `gui.setScreen()`
 - `InputConstants.MOUSE_BUTTON_LEFT` は 1（GLFW の 0 ではない）。クライアントゲームテストの `pressMouse` もこれを使う
 - 全チャンクの再構築は `Minecraft.levelExtractor.allChanged()`（F3+A と同じ）。`levelRenderer.invalidateCompiledGeometry` を直接呼ぶと、素の描画では再構築が予約されず何も描かれなくなる
+- クライアントゲームテストの入力は、マウスのイベントに修飾キーを載せない。Shift の判定は `event.hasShiftDown()` ではなく `Minecraft.hasShiftDown()` を使う
+- `GameRenderer.projectPointToScreen` はカメラの後ろの点も画面の中に写す。前後はカメラの向きとの内積で判定する
 - クラスの確認は `~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/<MC>/*.jar` を javap する
