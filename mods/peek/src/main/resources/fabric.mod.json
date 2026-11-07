@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "peek",
+	"version": "${version}",
+	"name": "Peek",
+	"description": "シュルカーボックスにカーソルを合わせると、中身をアイコンで表示します。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/peek/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.omuraisu.peek.client.PeekClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "peek.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	}
+}

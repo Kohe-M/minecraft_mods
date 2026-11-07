@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "com.omuraisu.peek.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ItemStackMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

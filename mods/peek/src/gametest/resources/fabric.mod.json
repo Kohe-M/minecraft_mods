@@ -1,0 +1,21 @@
+{
+	"schemaVersion": 1,
+	"id": "peek-gametest",
+	"version": "1.0.0",
+	"name": "Peek GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.peek.test.PeekClientGameTest"
+		]
+	},
+	"mixins": [
+		{
+			"config": "peek-gametest.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"peek": "*"
+	}
+}
