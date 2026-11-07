@@ -260,15 +260,15 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static void testPins(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		assertPins(OVERWORLD);
 
-		// マップ画面の外でピンを操作するキーはない
+		// 刺すキーはマップ画面の中でだけ効き、外でピンを操作するキーはない
 		List<String> keys = context.computeOnClient(client -> Arrays.stream(client.options.keyMappings)
 				.map(KeyMapping::getName)
 				.filter(name -> name.startsWith("key.minimap."))
 				.toList());
-		if (!keys.equals(List.of("key.minimap.open_map"))) {
-			throw new AssertionError("only the map key should be registered but was " + keys);
+		if (!keys.equals(List.of("key.minimap.open_map", "key.minimap.place_pin"))) {
+			throw new AssertionError("only the map and place keys should be registered but was " + keys);
 		}
-		context.getInput().pressKey(InputConstants.KEY_B);
+		context.getInput().pressKey(MinimapClient.placeKey);
 		context.getInput().pressKey(InputConstants.KEY_N);
 		context.waitTicks(2);
 		assertPins(OVERWORLD);
@@ -343,18 +343,25 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		// 刺す・抜く操作が左下に出る。名前の入力中は隠れる
 		assertHints(context, "map-hints", true);
 
-		// 左クリックで刺す
+		// 何もないところの左クリックでは刺さらない
 		Pins.Pin clicked = new Pins.Pin(OVERWORLD, playerX + 20, playerZ - 10);
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
+		assertPins(OVERWORLD, first);
+		assertNotEditing(context);
+
+		// 刺すキーでカーソルの位置に刺す
+		placeAt(context, view.x(clicked.x()), view.y(clicked.z()));
 		assertPins(OVERWORLD, first, clicked);
 		assertHints(context, "map-hints-editing", false);
 		confirmName(context);
 		assertHints(context, "map-hints-restored", true);
 		view.assertPin(context, "map-pin-placed", clicked);
 
-		// ピンの上の左クリックでは、抜けず、増えず、入力も始まらない。頭を押しても同じ
+		// ピンの上の左クリックと刺すキーでは、抜けず、増えず、入力も始まらない。頭の上でも同じ
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
 		click(context, view.x(clicked.x()) + 2, view.y(clicked.z()) - 8);
+		placeAt(context, view.x(clicked.x()), view.y(clicked.z()));
+		placeAt(context, view.x(clicked.x()) + 2, view.y(clicked.z()) - 8);
 		assertPins(OVERWORLD, first, clicked);
 		assertNotEditing(context);
 
@@ -370,9 +377,11 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		// ピンの頭を押しても抜ける
 		shiftClick(context, view.x(first.x()) + 2, view.y(first.z()) - 8);
 		assertPins(OVERWORLD);
-		click(context, view.x(first.x()), view.y(first.z()));
+		placeAt(context, view.x(first.x()), view.y(first.z()));
 		assertPins(OVERWORLD, first);
 		confirmName(context);
+
+		testRebinding(context, view, new Pins.Pin(OVERWORLD, playerX - 20, playerZ + 10), first);
 
 		// ドラッグは地図を動かすだけでピンは刺さらない
 		context.getInput().setCursorPos(300, 300);
@@ -436,7 +445,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		// 読み込まれていない遠くにも刺せて、地形がないところは背景の色になる
 		assertPixel(context, "map-far-background", 20, 20, EMPTY_COLOR);
 		Pins.Pin far = new Pins.Pin(OVERWORLD, playerX + 1600, playerZ);
-		click(context, 427 + 400, 240);
+		placeAt(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first, far);
 		confirmName(context);
 		shiftClick(context, 427 + 400, 240);
@@ -445,7 +454,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		scroll(context, 3);
 		assertScale(context, 2);
 
-		// GUI スケールや解像度を変えても、開いたままクリック位置が合う
+		// GUI スケールや解像度を変えても、開いたままカーソルの位置が合う
 		toggleMap(context);
 		toggleMap(context);
 		int guiScale = context.computeOnClient(client -> client.options.guiScale().get());
@@ -458,7 +467,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			ScreenView large = new ScreenView(1920, 1080, 4, playerX, playerZ);
 			large.assertBlock(context, "map-1080p-gui" + scale, SEAM, SEAM, MapColor.FIRE);
 			Pins.Pin scaled = new Pins.Pin(OVERWORLD, playerX + 30, playerZ + 12);
-			click(context, large.x(scaled.x()), large.y(scaled.z()));
+			placeAt(context, large.x(scaled.x()), large.y(scaled.z()));
 			assertPins(OVERWORLD, first, scaled);
 			confirmName(context);
 			shiftClick(context, large.x(scaled.x()), large.y(scaled.z()));
@@ -483,25 +492,35 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		toggleMap(context);
 		moveCursorAway(context);
 
-		// 刺すとそのまま名前を入力できる。M も文字として入り、地図は閉じない
-		click(context, view.x(x), view.y(z));
+		// 刺すとそのまま名前を入力できる。実際の打鍵と同じく、刺すキーの押下と離す間に届く文字は名前に入らない
+		context.getInput().setCursorPos(view.x(x), view.y(z));
+		context.waitTick();
+		context.getInput().holdKey(MinimapClient.placeKey);
+		context.getInput().typeChars("b");
+		context.getInput().releaseKey(MinimapClient.placeKey);
+		context.waitTick();
+		moveCursorAway(context);
 		assertPins(OVERWORLD, first, new Pins.Pin(OVERWORLD, x, z));
+
+		// 入力中は M と刺すキーも文字として入り、地図は閉じず、ピンも増えない
 		context.getInput().typeChars("m 拠点");
 		context.getInput().pressKey(MinimapClient.mapKey);
+		context.getInput().pressKey(MinimapClient.placeKey);
+		context.getInput().typeChars("b");
 		context.waitTicks(2);
 		assertMapOpen(context, true);
 		confirmName(context);
-		Pins.Pin named = new Pins.Pin(OVERWORLD, x, z, "m 拠点");
+		Pins.Pin named = new Pins.Pin(OVERWORLD, x, z, "m 拠点b");
 		assertPins(OVERWORLD, first, named);
 		assertMapOpen(context, true);
-		assertPinFileContains(save, "minecraft:overworld " + x + " " + z + " m 拠点\n");
+		assertPinFileContains(save, "minecraft:overworld " + x + " " + z + " m 拠点b\n");
 		view.assertPin(context, "pin-named", named);
 
 		// 右クリックで変更できる
 		rightClick(context, view.x(x), view.y(z));
 		context.getInput().typeChars("2");
 		confirmName(context);
-		Pins.Pin renamed = new Pins.Pin(OVERWORLD, x, z, "m 拠点2");
+		Pins.Pin renamed = new Pins.Pin(OVERWORLD, x, z, "m 拠点b2");
 		assertPins(OVERWORLD, first, renamed);
 
 		// Esc は入力だけを取り消して、地図は閉じない
@@ -516,7 +535,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		rightClick(context, view.x(x), view.y(z));
 		context.getInput().typeChars("3");
 		click(context, 40, 400);
-		Pins.Pin clicked = new Pins.Pin(OVERWORLD, x, z, "m 拠点23");
+		Pins.Pin clicked = new Pins.Pin(OVERWORLD, x, z, "m 拠点b23");
 		assertPins(OVERWORLD, first, clicked);
 
 		// 入力中にウィンドウの大きさが変わっても文字は残る
@@ -527,7 +546,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		confirmName(context);
 		context.getInput().resizeWindow(854, 480);
 		context.waitTicks(3);
-		assertPins(OVERWORLD, first, new Pins.Pin(OVERWORLD, x, z, "m 拠点234"));
+		assertPins(OVERWORLD, first, new Pins.Pin(OVERWORLD, x, z, "m 拠点b234"));
 
 		// 空白だけの名前は名前なしになる
 		rightClick(context, view.x(x), view.y(z));
@@ -848,7 +867,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				ScreenView view = new ScreenView(854, 480, 2, feet[0], feet[1]);
 
 				pin = new Pins.Pin(OVERWORLD, feet[0] + 10, feet[1] - 8);
-				click(context, view.x(pin.x()), view.y(pin.z()));
+				placeAt(context, view.x(pin.x()), view.y(pin.z()));
 				confirmName(context);
 				assertPins(OVERWORLD, pin);
 				Path file = context.computeOnClient(client -> Pins.serverFile(client.getCurrentServer().ip));
@@ -856,7 +875,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 				// 名前も残る
 				named = new Pins.Pin(OVERWORLD, feet[0] + 30, feet[1] + 20, "Camp");
-				click(context, view.x(named.x()), view.y(named.z()));
+				placeAt(context, view.x(named.x()), view.y(named.z()));
 				context.getInput().typeChars(named.name());
 				confirmName(context);
 				assertPins(OVERWORLD, pin, named);
@@ -990,6 +1009,71 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		moveCursorAway(context);
 	}
 
+	private static void placeAt(ClientGameTestContext context, int x, int y) {
+		context.getInput().setCursorPos(x, y);
+		context.waitTick();
+		context.getInput().pressKey(MinimapClient.placeKey);
+		context.waitTick();
+		moveCursorAway(context);
+	}
+
+	// 刺すキーは割り当てを変えられる。マウスのボタンにも割り当てられ、左下の説明もいまのキーになる
+	private static void testRebinding(ClientGameTestContext context, ScreenView view, Pins.Pin pin, Pins.Pin first) {
+		Path before = context.takeScreenshot("map-hints-default");
+		rebindPlaceKey(context, InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_R));
+		Path after = context.takeScreenshot("map-hints-rebound");
+		int guiScale = context.computeOnClient(client -> client.getWindow().getGuiScale());
+		readImage(before, beforeImage -> readImage(after, afterImage -> {
+			int rowHeight = 11 * guiScale;
+			int bottom = beforeImage.getHeight() - 4 * guiScale;
+			int width = 200 * guiScale;
+			if (differingPixels(beforeImage, afterImage, 0, width, bottom - 2 * rowHeight, bottom - rowHeight) == 0) {
+				throw new AssertionError("place hint should show the rebound key");
+			}
+			int removeRow = differingPixels(beforeImage, afterImage, 0, width, bottom - rowHeight, bottom);
+			if (removeRow != 0) {
+				throw new AssertionError("remove hint should not change but " + removeRow + " pixels did");
+			}
+			return null;
+		}));
+
+		// 元のキーでは刺さらない
+		context.getInput().setCursorPos(view.x(pin.x()), view.y(pin.z()));
+		context.waitTick();
+		context.getInput().pressKey(InputConstants.KEY_B);
+		context.waitTick();
+		moveCursorAway(context);
+		assertPins(OVERWORLD, first);
+		assertNotEditing(context);
+
+		placeAt(context, view.x(pin.x()), view.y(pin.z()));
+		assertPins(OVERWORLD, first, pin);
+		confirmName(context);
+		shiftClick(context, view.x(pin.x()), view.y(pin.z()));
+		assertPins(OVERWORLD, first);
+
+		rebindPlaceKey(context, InputConstants.Type.MOUSE.getOrCreate(InputConstants.MOUSE_BUTTON_MIDDLE));
+		context.getInput().setCursorPos(view.x(pin.x()), view.y(pin.z()));
+		context.waitTick();
+		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_MIDDLE);
+		context.waitTick();
+		moveCursorAway(context);
+		assertPins(OVERWORLD, first, pin);
+		confirmName(context);
+		shiftClick(context, view.x(pin.x()), view.y(pin.z()));
+		assertPins(OVERWORLD, first);
+
+		rebindPlaceKey(context, MinimapClient.placeKey.getDefaultKey());
+	}
+
+	private static void rebindPlaceKey(ClientGameTestContext context, InputConstants.Key key) {
+		context.runOnClient(client -> {
+			MinimapClient.placeKey.setKey(key);
+			KeyMapping.resetMapping();
+		});
+		context.waitTicks(2);
+	}
+
 	private static void scroll(ClientGameTestContext context, int steps) {
 		for (int i = 0; i < Math.abs(steps); i++) {
 			context.getInput().scroll(Math.signum(steps));
@@ -1094,7 +1178,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		moveCursorAway(context);
 		ScreenView view = new ScreenView(854, 480, 2, 0, 0);
 		view.assertBlock(context, "map-nether", 10, 5, MapColor.GOLD);
-		click(context, view.x(10), view.y(5));
+		placeAt(context, view.x(10), view.y(5));
 		assertPins(NETHER, new Pins.Pin(NETHER, 10, 5));
 		confirmName(context);
 		assertPins(OVERWORLD, new Pins.Pin(OVERWORLD, PLAYER_X, PLAYER_Z));

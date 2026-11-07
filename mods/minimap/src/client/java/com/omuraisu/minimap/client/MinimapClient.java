@@ -20,12 +20,16 @@ public class MinimapClient implements ClientModInitializer {
 	public static final Pins PINS = new Pins();
 
 	public static KeyMapping mapKey;
+	// マップ画面の中でだけ効く
+	public static KeyMapping placeKey;
 
 	@Override
 	public void onInitializeClient() {
 		KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("minimap", "main"));
 		mapKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.minimap.open_map", InputConstants.Type.KEYBOARD, InputConstants.KEY_M, category));
+		placeKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+				"key.minimap.place_pin", InputConstants.Type.KEYBOARD, InputConstants.KEY_B, category));
 
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "map"), MinimapHud::extract);
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "pin_labels"), PinBeams::extractLabels);
