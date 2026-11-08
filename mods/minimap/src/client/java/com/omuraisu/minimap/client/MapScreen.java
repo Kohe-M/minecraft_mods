@@ -62,7 +62,7 @@ public class MapScreen extends Screen {
 			// クライアントが持ち得るチャンクがすべて入る大きさ。外は遠くの地形（FarTerrain）に任せる
 			terrain = new MapTerrain("terrain_large", (minecraft.options.getEffectiveRenderDistance() + 1) * 2 * 16, 0);
 			terrain.tick(minecraft);
-			MinimapClient.FAR_TERRAIN.open(minecraft.level.dimension().identifier(), minecraft.player.chunkPosition());
+			MinimapClient.FAR_TERRAIN.open(minecraft, minecraft.level.dimension().identifier(), minecraft.player.chunkPosition());
 		}
 		// ウィンドウの大きさが変わると作り直されるので、入力中の文字を引き継ぐ
 		if (editing != null) {

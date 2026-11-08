@@ -4,13 +4,19 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.mojang.logging.LogUtils;
 import com.omuraisu.minimap.mixin.ChunkMapInvoker;
+import com.omuraisu.minimap.mixin.IOWorkerAccessor;
+import com.omuraisu.minimap.mixin.RegionFileStorageAccessor;
+import com.omuraisu.minimap.mixin.SimpleRegionStorageAccessor;
 
 import org.slf4j.Logger;
 
@@ -21,41 +27,57 @@ import it.unimi.dsi.fastutil.longs.LongList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongSet;
 
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkLevel;
 import net.minecraft.server.level.ServerChunkCache;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.Ticket;
 import net.minecraft.server.level.TicketType;
+import net.minecraft.util.Util;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
-// マップ画面に描画距離の外を出すため、頼まれたチャンクの地形の色を送り返す。
-// 生成済みのチャンクはワールドに読み込まず、セーブから読んで別のスレッドで色にする（札・エンティティ・保存が起きない）。
-// 未生成のチャンクは、同時に生成する数を絞り、サーバーが遅れていない間だけ生成する
+// マップ画面に描画距離の外を出すため、頼まれたチャンクの地形の色を送り返す。地図のためにチャンクをワールドへ読み込まない。
+// - メモリにあるチャンク: メインスレッドで色にする
+// - セーブにあるチャンク: リージョンファイルを自前のスレッドで直接読み、色にする（vanilla の IO スレッドを使わない）
+// - 未生成のチャンク: FEATURES まで生成する。同時に生成する数は、サーバーが予定より遅れていなければ増やし、遅れたら減らす
 public final class TerrainServer {
 	// プレイヤーのいるチャンクからこの距離（チャンク）までしか送らない。どの解像度でも一番引いた地図が収まる
 	public static final int RADIUS = 192;
-	// セーブを読み始める数（サーバー全体で 1 tick あたり）。読み込みは IO スレッドでワールドの保存より先に回されるので、
-	// 保存を待たせ続けない量にする
-	private static final int READS_PER_TICK = 64;
-	private static final int MAX_READING = 256;
-	// 読み込まれているチャンクから色を出すのはメインスレッドなので、1 tick に使う時間を絞る
+	// セーブを読んで色にするスレッドの数
+	private static final int WORKERS = Math.clamp(Runtime.getRuntime().availableProcessors() / 4, 2, 8);
+	// 1 tick に読み始める数と、同時に読んでいる数（サーバー全体）。遅れている間は、読み終えた後の送る処理も減らすため少なくする
+	private static final int READS_PER_TICK = 512;
+	private static final int READS_PER_TICK_BEHIND = 32;
+	private static final int MAX_READING = WORKERS * 128;
+	// メモリにあるチャンクから色を出すのはメインスレッドなので、1 tick に使う時間を絞る
 	private static final long LOADED_BUDGET_NANOS = 2_000_000;
-	// 同時に生成する数。サーバーの tick がこれより遅れている間は新しく始めない
-	private static final int MAX_GENERATING = 16;
-	private static final long HEALTHY_TICK_NANOS = 30_000_000;
+	// 同時に生成する数。遅れていなければ 1 秒ごとに増やし、遅れたら半分にする
+	private static final int MIN_GENERATING = 4;
+	private static final int MAX_GENERATING = 256;
+	private static final int GENERATING_STEP = 8;
+	// 直近 20 tick にかかった時間が予定の 1.1 倍を超えるか（tick の合間の処理も含む）、tick がこれより重いか、
+	// ヒープの使っている量が上限の 85% を超えたら絞る。vanilla は予定より 1 秒遅れると Can't keep up を出す
+	private static final int PACE_TICKS = 20;
+	private static final long SLOW_TICK_NANOS = 40_000_000;
+	private static final int MEMORY_PERCENT = 85;
 	// 答えたチャンクは、クライアントが次の依頼に反映するまで答え直さない
 	private static final int ANSWER_TICKS = 40;
+	// ワールドから外れてすぐのチャンクは、書く前のデータが vanilla の IO スレッドにあるので、そちらから読む
+	private static final int UNLOAD_TICKS = 600;
+	// 未生成と分かってからこの間は、生成の前にセーブを確かめ直さない
+	private static final int MISSING_TICKS = 1200;
 	// 生成し終えてから 1 秒で外れる。登録はしない（保存されない札なので名前は要らない）
 	private static final TicketType TICKET = new TicketType(20, TicketType.FLAG_LOADING);
 
@@ -65,17 +87,18 @@ public final class TerrainServer {
 
 	private final MinecraftServer server;
 	private final Map<UUID, Viewer> viewers = new HashMap<>();
-	private final Map<ResourceKey<Level>, LongSet> generatingChunks = new HashMap<>();
-	private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
-		Thread thread = new Thread(runnable, "Minimap Terrain");
-		thread.setDaemon(true);
-		thread.setPriority(Thread.MIN_PRIORITY);
-		return thread;
-	});
+	private final Map<ResourceKey<Level>, LevelState> levels = new HashMap<>();
+	private final ExecutorService workers = Executors.newFixedThreadPool(WORKERS, new WorkerFactory());
 	private int reading;
 	// 生成の前にセーブを確かめている分も数える
 	private int generating;
+	private int generationLimit = 16;
+	private int lastThrottle = Integer.MIN_VALUE / 2;
+	private final long[] tickTimes = new long[PACE_TICKS];
 	private boolean failureLogged;
+	// セーブを読んだ数のうち、vanilla の経路で読んだ数。テストから確かめる
+	private final AtomicInteger reads = new AtomicInteger();
+	private final AtomicInteger vanillaReads = new AtomicInteger();
 
 	private TerrainServer(MinecraftServer server) {
 		this.server = server;
@@ -85,7 +108,7 @@ public final class TerrainServer {
 		ServerLifecycleEvents.SERVER_STARTING.register(server -> current = new TerrainServer(server));
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
 			if (current != null && current.server == server) {
-				current.worker.shutdownNow();
+				current.close();
 				current = null;
 			}
 		});
@@ -110,10 +133,26 @@ public final class TerrainServer {
 				current.viewers.remove(handler.player.getUUID());
 			}
 		});
+		ServerChunkEvents.CHUNK_UNLOAD.register((level, chunk) -> {
+			if (current != null && current.server == level.getServer()) {
+				current.state(level).unloaded.put(chunk.getPos().pack(), level.getServer().getTickCount());
+			}
+		});
+	}
+
+	// 動いているサーバーで、セーブを読んだ数と、そのうち vanilla の経路で読んだ数
+	public static int[] readCounts() {
+		TerrainServer server = current;
+		return server == null ? new int[2] : new int[] {server.reads.get(), server.vanillaReads.get()};
 	}
 
 	public static boolean isInRange(ChunkPos center, int x, int z) {
 		return Math.max(Math.abs(x - center.x()), Math.abs(z - center.z())) <= RADIUS;
+	}
+
+	private void close() {
+		workers.shutdownNow();
+		levels.values().forEach(LevelState::close);
 	}
 
 	private void request(ServerPlayer player, TerrainRequest payload) {
@@ -131,6 +170,18 @@ public final class TerrainServer {
 			return;
 		}
 		int now = server.getTickCount();
+		for (LevelState state : levels.values()) {
+			state.prune(now);
+		}
+		long time = Util.getNanos();
+		long previous = tickTimes[now % PACE_TICKS];
+		tickTimes[now % PACE_TICKS] = time;
+		long expected = PACE_TICKS * server.tickRateManager().nanosecondsPerTick();
+		Runtime runtime = Runtime.getRuntime();
+		boolean lowMemory = (runtime.totalMemory() - runtime.freeMemory()) / MEMORY_PERCENT > runtime.maxMemory() / 100;
+		boolean behind = previous != 0 && (time - previous) * 10 > expected * 11 || server.getAverageTickTimeNanos() > SLOW_TICK_NANOS || lowMemory;
+		adjustGenerationLimit(behind, now);
+
 		List<Viewer> active = new ArrayList<>();
 		List<ServerPlayer> players = new ArrayList<>();
 		for (Map.Entry<UUID, Viewer> entry : viewers.entrySet()) {
@@ -139,51 +190,66 @@ public final class TerrainServer {
 			if (player == null) {
 				continue;
 			}
-			viewer.flushMissing(player);
 			viewer.prune(now);
 			if (viewer.read.length > 0 || viewer.generate.length > 0) {
 				active.add(viewer);
 				players.add(player);
 			}
 		}
-		if (active.isEmpty()) {
-			return;
-		}
-
 		long deadline = System.nanoTime() + LOADED_BUDGET_NANOS;
-		boolean healthy = server.getAverageTickTimeNanos() < HEALTHY_TICK_NANOS;
-		int reads = Math.max(0, Math.min(READS_PER_TICK, MAX_READING - reading));
-		int share = Math.max(1, (reads + active.size() - 1) / active.size());
+		int reads = Math.max(0, Math.min(behind ? READS_PER_TICK_BEHIND : READS_PER_TICK, MAX_READING - reading));
+		int share = active.isEmpty() ? 0 : Math.max(1, (reads + active.size() - 1) / active.size());
 		// 見ている人が何人いても順に先を譲る
 		for (int i = 0; i < active.size(); i++) {
 			int index = (i + now) % active.size();
-			reads -= process(active.get(index), players.get(index), now, deadline, healthy, Math.min(share, reads));
+			reads -= process(active.get(index), players.get(index), now, deadline, behind, Math.min(share, reads));
+		}
+		for (Map.Entry<UUID, Viewer> entry : viewers.entrySet()) {
+			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
+			if (player != null) {
+				entry.getValue().flush(player);
+			}
 		}
 	}
 
-	// 頼まれた順に、読み込まれているものはすぐ、セーブにあるものは読んで、未生成のものは生成して送る。
+	// 遅れていなければ 1 秒ごとに増やし（生成する数が上限に届いているときだけ）、遅れたら半分にする
+	private void adjustGenerationLimit(boolean behind, int now) {
+		if (behind) {
+			if (now - lastThrottle >= 20) {
+				generationLimit = Math.max(MIN_GENERATING, generationLimit / 2);
+				lastThrottle = now;
+			}
+		} else if (now % 20 == 0 && generating >= generationLimit && now - lastThrottle >= 100) {
+			generationLimit = Math.min(MAX_GENERATING, generationLimit + GENERATING_STEP);
+		}
+	}
+
+	// 頼まれた順に、メモリにあるものはすぐ、セーブにあるものは読んで、未生成のものは生成して送る。
 	// 生成は読む方とは別に数え、読む列が長くても止まらないようにする。セーブを読み始めた数を返す（生成の前の確かめは数えない）
-	private int process(Viewer viewer, ServerPlayer player, int now, long deadline, boolean healthy, int reads) {
+	private int process(Viewer viewer, ServerPlayer player, int now, long deadline, boolean behind, int reads) {
 		ServerLevel level = player.level();
 		if (viewer.level != level.dimension()) {
-			viewer.level = level.dimension();
-			viewer.answered.clear();
+			viewer.changeLevel(level.dimension());
 		}
+		LevelState state = state(level);
 		ChunkPos center = player.chunkPosition();
-		LongSet generatingHere = generatingChunks.computeIfAbsent(level.dimension(), key -> new LongOpenHashSet());
 		for (long chunk : viewer.generate) {
-			if (!viewer.isWaiting(chunk, center, now) || generatingHere.contains(chunk)) {
+			if (!viewer.isWaiting(chunk, center, now) || state.generating.contains(chunk)) {
 				continue;
 			}
 			ChunkAccess loaded = inMemory(level, chunk);
 			if (loaded != null) {
 				if (System.nanoTime() < deadline) {
-					sendLoaded(viewer, player, level, loaded, now);
+					sendLoaded(viewer, player, loaded, now);
 				}
-			} else if (healthy && generating < MAX_GENERATING) {
-				// 他のプレイヤーが生成したかもしれないので、先にセーブを確かめる
+			} else if (!behind && generating < generationLimit) {
 				generating++;
-				read(viewer, player, level, chunk, true);
+				if (state.isKnownMissing(chunk, now)) {
+					generate(state, chunk);
+				} else {
+					// 他のプレイヤーが生成したかもしれないので、先にセーブを確かめる
+					read(viewer, player, state, chunk, true);
+				}
 			}
 		}
 		int started = 0;
@@ -194,10 +260,10 @@ public final class TerrainServer {
 			ChunkAccess loaded = inMemory(level, chunk);
 			if (loaded != null) {
 				if (System.nanoTime() < deadline) {
-					sendLoaded(viewer, player, level, loaded, now);
+					sendLoaded(viewer, player, loaded, now);
 				}
 			} else if (started < reads) {
-				read(viewer, player, level, chunk, false);
+				read(viewer, player, state, chunk, false);
 				started++;
 			}
 		}
@@ -216,32 +282,40 @@ public final class TerrainServer {
 		return access != null && access.getPersistedStatus().isOrAfter(ChunkStatus.FEATURES) ? access : null;
 	}
 
-	private void sendLoaded(Viewer viewer, ServerPlayer player, ServerLevel level, ChunkAccess chunk, int now) {
-		ChunkPos pos = chunk.getPos();
-		send(viewer, player, TerrainColors.tile(level.dimension().identifier(), pos, TerrainColors.of(chunk),
-				level.dimensionType().hasCeiling(), player.getBlockY()), now);
+	private void sendLoaded(Viewer viewer, ServerPlayer player, ChunkAccess chunk, int now) {
+		ServerLevel level = player.level();
+		viewer.queue(TerrainColors.tile(chunk.getPos(), TerrainColors.of(chunk), level.dimensionType().hasCeiling(), player.getBlockY()), now);
 	}
 
-	private void send(Viewer viewer, ServerPlayer player, TerrainTile tile, int now) {
-		viewer.answered.put(tile.chunk(), now);
-		if (ServerPlayNetworking.canSend(player, TerrainTile.TYPE)) {
-			ServerPlayNetworking.send(player, tile);
-		}
-	}
-
-	// IO スレッドで読み、色にするのは自前のスレッド。メインスレッドは結果を送るだけ
-	private void read(Viewer viewer, ServerPlayer player, ServerLevel level, long chunk, boolean generate) {
+	// 読むのも色にするのも自前のスレッド。メインスレッドは結果を送るだけ。
+	// ワールドから外れてすぐのチャンクと、直接は読めなかったチャンクは vanilla の経路（IO スレッド）で読む
+	private void read(Viewer viewer, ServerPlayer player, LevelState state, long chunk, boolean generate) {
+		ServerLevel level = state.level;
 		ChunkPos pos = ChunkPos.unpack(chunk);
 		ResourceKey<Level> dimension = level.dimension();
 		boolean ceiling = level.dimensionType().hasCeiling();
 		int feetY = player.getBlockY();
+		UUID id = player.getUUID();
 		viewer.pending.add(chunk);
 		reading++;
-		((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$readChunk(pos)
-				.thenApplyAsync(tag -> tag.map(data -> StoredChunk.read(level, data))
-						.map(blocks -> TerrainColors.tile(dimension.identifier(), pos, blocks, ceiling, feetY))
-						.orElse(null), worker)
-				.whenComplete((tile, error) -> server.execute(() -> finishRead(viewer, player.getUUID(), dimension, chunk, tile, error, generate)));
+		reads.incrementAndGet();
+		CompletableFuture<CompoundTag> tag;
+		if (state.isRecentlyUnloaded(chunk, server.getTickCount())) {
+			tag = readByVanilla(level, pos);
+		} else {
+			RegionReader reader = state.reader();
+			tag = CompletableFuture.supplyAsync(() -> reader.read(pos), workers)
+					.thenCompose(read -> read != null ? CompletableFuture.completedFuture(read) : readByVanilla(level, pos));
+		}
+		tag.thenApplyAsync(data -> data == RegionReader.ABSENT ? null
+						: Optional.ofNullable(StoredChunk.read(level, data)).map(blocks -> TerrainColors.tile(pos, blocks, ceiling, feetY)).orElse(null), workers)
+				.whenComplete((tile, error) -> server.execute(() -> finishRead(viewer, id, dimension, chunk, tile, error, generate)));
+	}
+
+	// 古い版のデータは読み込むときと同じく新しい形に直る
+	private CompletableFuture<CompoundTag> readByVanilla(ServerLevel level, ChunkPos pos) {
+		vanillaReads.incrementAndGet();
+		return ((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$readChunk(pos).thenApply(tag -> tag.orElse(RegionReader.ABSENT));
 	}
 
 	private void finishRead(Viewer viewer, UUID id, ResourceKey<Level> dimension, long chunk, TerrainTile tile, Throwable error, boolean generate) {
@@ -258,6 +332,7 @@ public final class TerrainServer {
 			}
 			int now = server.getTickCount();
 			ServerLevel level = player.level();
+			LevelState state = state(level);
 			if (error != null) {
 				if (!failureLogged) {
 					failureLogged = true;
@@ -267,15 +342,18 @@ public final class TerrainServer {
 			} else if (inMemory(level, chunk) != null) {
 				// 読んでいる間に読み込まれた。セーブより新しいかもしれないので、次の tick にメモリの方から送る
 			} else if (tile != null) {
-				send(viewer, player, tile, now);
-			} else if (generate) {
-				if (isInRange(player.chunkPosition(), ChunkPos.getX(chunk), ChunkPos.getZ(chunk))) {
-					generate(level, chunk);
-					generationStarted = true;
-				}
+				viewer.queue(tile, now);
 			} else {
-				viewer.missing.add(chunk);
-				viewer.answered.put(chunk, now);
+				state.missing.put(chunk, now);
+				if (generate) {
+					if (isInRange(player.chunkPosition(), ChunkPos.getX(chunk), ChunkPos.getZ(chunk))) {
+						generate(state, chunk);
+						generationStarted = true;
+					}
+				} else {
+					viewer.missing.add(chunk);
+					viewer.answered.put(chunk, now);
+				}
 			}
 		} finally {
 			if (generate && !generationStarted) {
@@ -287,39 +365,50 @@ public final class TerrainServer {
 	// 地図に要るのは地形と地物だけなので、光の計算やエンティティの読み込みをする FULL までは進めない（FEATURES のまま保存される）。
 	// getChunkFuture だけでは 1 tick で札が外れ、生成に時間がかかるチャンクは途中で捨てられるので、生成し終えるまで外れない札を付ける。
 	// getChunkFuture はメインスレッドから呼ぶと生成し終えるまで待つので、自前のスレッドから呼ぶ（メインスレッドに頼むだけになる）
-	private void generate(ServerLevel level, long chunk) {
-		LongSet generatingHere = generatingChunks.computeIfAbsent(level.dimension(), key -> new LongOpenHashSet());
-		generatingHere.add(chunk);
+	private void generate(LevelState state, long chunk) {
+		state.generating.add(chunk);
 		ChunkPos pos = ChunkPos.unpack(chunk);
-		ServerChunkCache source = level.getChunkSource();
+		ServerChunkCache source = state.level.getChunkSource();
 		source.addTicket(new Ticket(TICKET, ChunkLevel.byStatus(ChunkStatus.FEATURES)), pos);
-		CompletableFuture.supplyAsync(() -> source.getChunkFuture(pos.x(), pos.z(), ChunkStatus.FEATURES, true), worker)
+		CompletableFuture.supplyAsync(() -> source.getChunkFuture(pos.x(), pos.z(), ChunkStatus.FEATURES, true), workers)
 				.thenCompose(future -> future)
 				.whenComplete((result, error) -> server.execute(() -> {
 					if (current != this) {
 						return;
 					}
 					generating--;
-					generatingHere.remove(chunk);
+					state.generating.remove(chunk);
 					ChunkAccess generated = result == null ? null : result.orElse(null);
 					if (generated != null && Minimap.isActive()) {
-						sendGenerated(level, generated);
+						state.missing.remove(chunk);
+						sendGenerated(state.level, generated);
 					}
 				}));
 	}
 
-	// 頼んでいるプレイヤーに送る
+	// 頼んでいるプレイヤーに送る。色にするのは自前のスレッド
 	private void sendGenerated(ServerLevel level, ChunkAccess chunk) {
 		long key = chunk.getPos().pack();
-		int now = server.getTickCount();
+		boolean ceiling = level.dimensionType().hasCeiling();
 		for (Map.Entry<UUID, Viewer> entry : viewers.entrySet()) {
 			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
 			Viewer viewer = entry.getValue();
-			if (player != null && player.level() == level && viewer.wants(key)) {
-				send(viewer, player, TerrainColors.tile(level.dimension().identifier(), chunk.getPos(), TerrainColors.of(chunk),
-						level.dimensionType().hasCeiling(), player.getBlockY()), now);
+			if (player == null || player.level() != level || !viewer.wants(key)) {
+				continue;
 			}
+			int feetY = player.getBlockY();
+			UUID id = entry.getKey();
+			CompletableFuture.supplyAsync(() -> TerrainColors.tile(chunk.getPos(), TerrainColors.of(chunk), ceiling, feetY), workers)
+					.whenComplete((tile, error) -> server.execute(() -> {
+						if (current == this && tile != null && viewers.get(id) == viewer && viewer.level == level.dimension()) {
+							viewer.queue(tile, server.getTickCount());
+						}
+					}));
 		}
+	}
+
+	private LevelState state(ServerLevel level) {
+		return levels.computeIfAbsent(level.dimension(), key -> new LevelState(level));
 	}
 
 	private static long[] toArray(List<Long> chunks) {
@@ -328,6 +417,51 @@ public final class TerrainServer {
 			array[i] = chunks.get(i);
 		}
 		return array;
+	}
+
+	private static final class LevelState {
+		private final ServerLevel level;
+		private RegionReader reader;
+		// 生成しているチャンク
+		private final LongSet generating = new LongOpenHashSet();
+		// ワールドから外れた tick
+		private final Long2IntMap unloaded = new Long2IntOpenHashMap();
+		// 未生成と分かった tick
+		private final Long2IntMap missing = new Long2IntOpenHashMap();
+
+		private LevelState(ServerLevel level) {
+			this.level = level;
+		}
+
+		private RegionReader reader() {
+			if (reader == null) {
+				var worker = ((SimpleRegionStorageAccessor) level.getChunkSource().chunkMap).minimap$worker();
+				var storage = ((IOWorkerAccessor) worker).minimap$storage();
+				reader = new RegionReader(((RegionFileStorageAccessor) (Object) storage).minimap$folder());
+			}
+			return reader;
+		}
+
+		private boolean isRecentlyUnloaded(long chunk, int now) {
+			return unloaded.containsKey(chunk) && now - unloaded.get(chunk) < UNLOAD_TICKS;
+		}
+
+		private boolean isKnownMissing(long chunk, int now) {
+			return missing.containsKey(chunk) && now - missing.get(chunk) < MISSING_TICKS;
+		}
+
+		private void prune(int now) {
+			if (now % 200 == 0) {
+				unloaded.long2IntEntrySet().removeIf(entry -> now - entry.getIntValue() >= UNLOAD_TICKS);
+				missing.long2IntEntrySet().removeIf(entry -> now - entry.getIntValue() >= MISSING_TICKS);
+			}
+		}
+
+		private void close() {
+			if (reader != null) {
+				reader.close();
+			}
+		}
 	}
 
 	private static final class Viewer {
@@ -340,7 +474,8 @@ public final class TerrainServer {
 		private final LongSet pending = new LongOpenHashSet();
 		// 答えた tick
 		private final Long2IntMap answered = new Long2IntOpenHashMap();
-		// まとめて送る未生成のチャンク
+		// まとめて送る色と未生成のチャンク
+		private final List<TerrainTile> tiles = new ArrayList<>();
 		private final LongList missing = new LongArrayList();
 
 		private boolean wants(long chunk) {
@@ -364,17 +499,33 @@ public final class TerrainServer {
 			return !answered.containsKey(chunk) || now - answered.get(chunk) >= ANSWER_TICKS;
 		}
 
+		private void queue(TerrainTile tile, int now) {
+			answered.put(tile.chunk(), now);
+			tiles.add(tile);
+		}
+
+		private void changeLevel(ResourceKey<Level> newLevel) {
+			level = newLevel;
+			answered.clear();
+			tiles.clear();
+			missing.clear();
+		}
+
 		private void prune(int now) {
 			if (now % ANSWER_TICKS == 0) {
 				answered.long2IntEntrySet().removeIf(entry -> now - entry.getIntValue() >= ANSWER_TICKS);
 			}
 		}
 
-		private void flushMissing(ServerPlayer player) {
-			if (missing.isEmpty() || level == null) {
-				return;
+		private void flush(ServerPlayer player) {
+			if (level != null && !tiles.isEmpty() && ServerPlayNetworking.canSend(player, TerrainTiles.TYPE)) {
+				for (int from = 0; from < tiles.size(); from += TerrainTiles.MAX_TILES) {
+					ServerPlayNetworking.send(player, new TerrainTiles(level.identifier(),
+							new ArrayList<>(tiles.subList(from, Math.min(tiles.size(), from + TerrainTiles.MAX_TILES)))));
+				}
 			}
-			if (ServerPlayNetworking.canSend(player, TerrainMissing.TYPE)) {
+			tiles.clear();
+			if (level != null && !missing.isEmpty() && ServerPlayNetworking.canSend(player, TerrainMissing.TYPE)) {
 				for (int from = 0; from < missing.size(); from += TerrainRequest.MAX_READ) {
 					List<Long> chunks = new ArrayList<>(missing.subList(from, Math.min(missing.size(), from + TerrainRequest.MAX_READ)));
 					ServerPlayNetworking.send(player, new TerrainMissing(level.identifier(), chunks));
@@ -386,7 +537,20 @@ public final class TerrainServer {
 		private void cancel() {
 			read = NONE;
 			generate = NONE;
+			tiles.clear();
 			missing.clear();
+		}
+	}
+
+	private static final class WorkerFactory implements ThreadFactory {
+		private final AtomicInteger count = new AtomicInteger();
+
+		@Override
+		public Thread newThread(Runnable runnable) {
+			Thread thread = new Thread(runnable, "Minimap Terrain #" + count.incrementAndGet());
+			thread.setDaemon(true);
+			thread.setPriority(Thread.MIN_PRIORITY);
+			return thread;
 		}
 	}
 }

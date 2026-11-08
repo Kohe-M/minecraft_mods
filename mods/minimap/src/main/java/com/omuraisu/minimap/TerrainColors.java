@@ -1,7 +1,6 @@
 package com.omuraisu.minimap;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.EmptyBlockGetter;
@@ -77,7 +76,7 @@ public final class TerrainColors {
 
 	// チャンク 1 つ分の色を北から 1 行ずつ並べる。北の端の行はひとつ北のチャンクがないと明るさを決められないので、
 	// 北と比べる高さを添え、受け取った側が relief で決める。南の端の行の高さも、南のチャンクのために添える
-	public static TerrainTile tile(Identifier dimension, ChunkPos pos, Blocks blocks, boolean ceiling, int feetY) {
+	public static TerrainTile tile(ChunkPos pos, Blocks blocks, boolean ceiling, int feetY) {
 		byte[] colors = new byte[16 * 16];
 		short[] northEdge = new short[16];
 		short[] southEdge = new short[16];
@@ -102,7 +101,7 @@ public final class TerrainColors {
 		for (int dx = 0; dx < 16; dx++) {
 			southEdge[dx] = (short) previous[dx];
 		}
-		return new TerrainTile(dimension, pos.pack(), colors, northEdge, southEdge);
+		return new TerrainTile(pos.pack(), colors, northEdge, southEdge);
 	}
 
 	// 北と比べる前の色（明るさは NORMAL。流体は深さで決めた明るさ）と、北と比べる高さを 1 つにまとめる

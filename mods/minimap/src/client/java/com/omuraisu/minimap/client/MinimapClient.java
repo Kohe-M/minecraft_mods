@@ -6,7 +6,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.TerrainMissing;
-import com.omuraisu.minimap.TerrainTile;
+import com.omuraisu.minimap.TerrainTiles;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
@@ -17,6 +17,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -42,13 +43,14 @@ public class MinimapClient implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "pin_labels"), PinBeams::extractLabels);
 		LevelRenderEvents.COLLECT_SUBMITS.register(PinBeams::submit);
 
-		ClientPlayNetworking.registerGlobalReceiver(TerrainTile.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
+		ClientPlayNetworking.registerGlobalReceiver(TerrainTiles.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainMissing.TYPE, (payload, context) -> FAR_TERRAIN.missing(payload));
 		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> FAR_TERRAIN.forget(level.dimension().identifier(), chunk.getPos()));
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			PINS.open(pinFile(client));
 			FAR_TERRAIN.clear();
+			FAR_TERRAIN.openCache(farTerrainFolder(client));
 		});
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
 			PINS.close();
@@ -72,6 +74,16 @@ public class MinimapClient implements ClientModInitializer {
 		while (mapKey.consumeClick()) {
 			client.gui.setScreen(new MapScreen());
 		}
+	}
+
+	// 遠くの地形を残す場所。シングルプレイはセーブの中、マルチプレイはサーバーのアドレスごと
+	private static Path farTerrainFolder(Minecraft client) {
+		if (client.getSingleplayerServer() != null) {
+			return client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).resolve("minimap_far");
+		}
+		return client.getCurrentServer() != null
+				? FabricLoader.getInstance().getGameDir().resolve("minimap_far").resolve(Pins.encodeAddress(client.getCurrentServer().ip))
+				: null;
 	}
 
 	// シングルプレイはセーブの中に置き、ワールドと一緒に移動・削除されるようにする

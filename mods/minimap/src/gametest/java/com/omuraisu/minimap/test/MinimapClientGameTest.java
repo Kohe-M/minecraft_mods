@@ -149,51 +149,70 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				.create()) {
 			save = singleplayer.getWorldSave();
 			singleplayer.getConnection().waitForChunksRender();
-			generated = watchFarTerrainLoad(context, singleplayer, "far-terrain-load", 600);
-			if (generated < 500) {
+			openFarMap(context);
+			watchServer(context, singleplayer, "far-terrain-load", 600);
+			generated = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
+			toggleMap(context);
+			if (generated < 1000) {
 				throw new AssertionError("far terrain should keep generating but only " + generated + " chunks arrived");
 			}
 		}
-		// 生成し終えた分はセーブから読むので、すぐ届く
+		// 開き直すと、前に届いた色をクライアントのファイルからすぐ出し、裏でサーバーのセーブから読み直す
 		try (TestSingleplayerContext singleplayer = save.open()) {
 			singleplayer.getConnection().waitForChunksRender();
-			int read = watchFarTerrainLoad(context, singleplayer, "far-terrain-load-reopened", 200);
-			if (read < generated) {
-				throw new AssertionError("chunks generated before should be read from the save within 10 seconds: " + read + " / " + generated);
+			int before = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.received());
+			openFarMap(context);
+			context.waitTicks(10);
+			int shown = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
+			if (shown < generated) {
+				throw new AssertionError("far terrain saved on the client should be shown right after opening: " + shown + " / " + generated);
 			}
+			watchServer(context, singleplayer, "far-terrain-load-reopened", 200);
+			int refreshed = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.received()) - before;
+			int[] reads = singleplayer.getServer().computeOnServer(server -> TerrainServer.readCounts());
+			System.out.printf("far-terrain-load-reopened: shown %d, refreshed %d, read %d (vanilla %d)%n", shown, refreshed, reads[0], reads[1]);
+			if (refreshed < generated || reads[0] < generated) {
+				throw new AssertionError("chunks generated before should be read again from the save within 10 seconds: " + refreshed + " / " + generated);
+			}
+			// リージョンファイルを自前で読めている（vanilla の IO スレッドに頼っていない）
+			if (reads[1] * 10 > reads[0]) {
+				throw new AssertionError("most chunks should be read from the region files directly but " + reads[1] + " / " + reads[0] + " fell back");
+			}
+			toggleMap(context);
 		}
 		context.getInput().resizeWindow(854, 480);
 		context.waitTicks(3);
 	}
 
-	// 一番引いたマップ画面を ticks の間開き、覚えている遠くの地形のチャンクの数を返す
-	private static int watchFarTerrainLoad(ClientGameTestContext context, TestSingleplayerContext singleplayer, String name, int ticks) {
-		singleplayer.getServer().runOnServer(server -> FULL_LOADS.clear());
+	private static void openFarMap(ClientGameTestContext context) {
 		context.getInput().resizeWindow(3840, 2160);
 		context.waitTicks(3);
 		toggleMap(context);
 		context.getInput().setCursorPos(1920, 1080);
 		scroll(context, -6);
 		assertScale(context, 1);
+	}
+
+	// ticks の間、サーバーが遅れず、地図のためにチャンクをワールドへ読み込んでいないことを確かめる
+	private static void watchServer(ClientGameTestContext context, TestSingleplayerContext singleplayer, String name, int ticks) {
+		singleplayer.getServer().runOnServer(server -> FULL_LOADS.clear());
 		long maxTick = 0;
 		for (int waited = 0; waited < ticks; waited += 100) {
-			context.waitTicks(100);
+			context.waitTicks(Math.min(100, ticks - waited));
 			maxTick = Math.max(maxTick, singleplayer.getServer().computeOnServer(server -> Arrays.stream(server.getTickTimesNanos()).max().orElse(0)));
 		}
 		context.takeScreenshot(name);
 		long averageTick = singleplayer.getServer().computeOnServer(server -> server.getAverageTickTimeNanos());
 		int loads = singleplayer.getServer().computeOnServer(server -> FULL_LOADS.size());
-		int received = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
+		int chunks = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
 		System.out.printf("%s: %d chunks, max tick %d ms, average tick %d ms, loaded into the world %d%n",
-				name, received, maxTick / 1_000_000, averageTick / 1_000_000, loads);
-		toggleMap(context);
+				name, chunks, maxTick / 1_000_000, averageTick / 1_000_000, loads);
 		if (loads > 100) {
 			throw new AssertionError(name + ": " + loads + " chunks were loaded into the world for the map");
 		}
 		if (maxTick > 1_000_000_000L || averageTick > 50_000_000L) {
 			throw new AssertionError(name + ": server fell behind (max tick " + maxTick / 1_000_000 + " ms, average " + averageTick / 1_000_000 + " ms)");
 		}
-		return received;
 	}
 
 	// 起伏や水の見え方はスクリーンショットで確かめる

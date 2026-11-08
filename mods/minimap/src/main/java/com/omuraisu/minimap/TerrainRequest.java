@@ -12,9 +12,10 @@ import net.minecraft.resources.Identifier;
 // read はセーブにあれば送り、なければ TerrainMissing で答える。generate は未生成と答えたチャンクで、サーバーに余裕があるときだけ生成する。
 // どちらも空なら取り消すだけ
 public record TerrainRequest(List<Long> read, List<Long> generate) implements CustomPacketPayload {
-	public static final int MAX_READ = 1024;
-	public static final int MAX_GENERATE = 64;
-	public static final Type<TerrainRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_request"));
+	// 1 万チャンク/秒ほどまで頼めるよう、0.25 秒ごとに頼み直す（パケットは 32 KiB 未満に収める）
+	public static final int MAX_READ = 2048;
+	public static final int MAX_GENERATE = 256;
+	public static final Type<TerrainRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v2/request"));
 	public static final StreamCodec<RegistryFriendlyByteBuf, TerrainRequest> CODEC = StreamCodec.composite(
 			ByteBufCodecs.LONG.apply(ByteBufCodecs.list(MAX_READ)), TerrainRequest::read,
 			ByteBufCodecs.LONG.apply(ByteBufCodecs.list(MAX_GENERATE)), TerrainRequest::generate,

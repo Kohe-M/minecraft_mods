@@ -41,8 +41,12 @@ public final class Pins {
 	private Path file;
 
 	public static Path serverFile(String address) {
-		return FabricLoader.getInstance().getConfigDir().resolve("minimap")
-				.resolve(URLEncoder.encode(address, StandardCharsets.UTF_8).replace("*", "%2A") + ".txt");
+		return FabricLoader.getInstance().getConfigDir().resolve("minimap").resolve(encodeAddress(address) + ".txt");
+	}
+
+	// サーバーのアドレスをファイル名に使える形にする
+	static String encodeAddress(String address) {
+		return URLEncoder.encode(address, StandardCharsets.UTF_8).replace("*", "%2A");
 	}
 
 	public void open(Path file) {

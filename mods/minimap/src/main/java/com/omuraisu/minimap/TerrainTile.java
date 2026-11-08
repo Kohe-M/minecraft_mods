@@ -1,26 +1,18 @@
 package com.omuraisu.minimap;
 
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
 
 // 1 チャンク分の地形の色（TerrainColors.tile）。北の端の行の明るさは、受け取った側がひとつ北のチャンクの southEdge と
-// northEdge を比べて決める（TerrainColors.relief）
-public record TerrainTile(Identifier dimension, long chunk, byte[] colors, short[] northEdge, short[] southEdge) implements CustomPacketPayload {
-	public static final Type<TerrainTile> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_tile"));
-	public static final StreamCodec<FriendlyByteBuf, TerrainTile> CODEC = CustomPacketPayload.codec(TerrainTile::write, TerrainTile::read);
-
-	private static TerrainTile read(FriendlyByteBuf buf) {
-		Identifier dimension = buf.readIdentifier();
+// northEdge を比べて決める（TerrainColors.relief）。送るときは TerrainTiles にまとめる
+public record TerrainTile(long chunk, byte[] colors, short[] northEdge, short[] southEdge) {
+	static TerrainTile read(FriendlyByteBuf buf) {
 		long chunk = buf.readLong();
 		byte[] colors = new byte[16 * 16];
 		buf.readBytes(colors);
-		return new TerrainTile(dimension, chunk, colors, readEdge(buf), readEdge(buf));
+		return new TerrainTile(chunk, colors, readEdge(buf), readEdge(buf));
 	}
 
-	private void write(FriendlyByteBuf buf) {
-		buf.writeIdentifier(dimension);
+	void write(FriendlyByteBuf buf) {
 		buf.writeLong(chunk);
 		buf.writeBytes(colors);
 		writeEdge(buf, northEdge);
@@ -39,10 +31,5 @@ public record TerrainTile(Identifier dimension, long chunk, byte[] colors, short
 		for (short y : edge) {
 			buf.writeShort(y);
 		}
-	}
-
-	@Override
-	public Type<TerrainTile> type() {
-		return TYPE;
 	}
 }

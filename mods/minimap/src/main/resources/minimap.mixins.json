@@ -3,7 +3,10 @@
 	"package": "com.omuraisu.minimap.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"mixins": [
-		"ChunkMapInvoker"
+		"ChunkMapInvoker",
+		"IOWorkerAccessor",
+		"RegionFileStorageAccessor",
+		"SimpleRegionStorageAccessor"
 	],
 	"injectors": {
 		"defaultRequire": 1
