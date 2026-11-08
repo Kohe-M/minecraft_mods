@@ -92,6 +92,32 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			assertState(context, false, OreMode.GOLD);
 			waitForRender(context, singleplayer);
 			context.takeScreenshot("xray-off-again");
+
+			// Jori で無効にされている間は透過せず、キーも効かない。戻すと透過し直す
+			tap(context);
+			assertState(context, true, OreMode.GOLD);
+			context.runOnClient(client -> XrayClient.setActive(false));
+			try {
+				assertState(context, false, OreMode.GOLD);
+				waitForRender(context, singleplayer);
+				context.takeScreenshot("xray-inactive");
+				tap(context);
+				assertState(context, false, OreMode.GOLD);
+				context.getInput().holdKey(XrayClient.toggle);
+				context.waitTicks(10);
+				if (context.computeOnClient(client -> client.gui.screen()) != null) {
+					throw new AssertionError("wheel should not open while inactive");
+				}
+				context.getInput().releaseKey(XrayClient.toggle);
+				context.waitTick();
+			} finally {
+				context.runOnClient(client -> XrayClient.setActive(true));
+			}
+			assertState(context, true, OreMode.GOLD);
+			waitForRender(context, singleplayer);
+			context.takeScreenshot("xray-active-again");
+			tap(context);
+			assertState(context, false, OreMode.GOLD);
 		}
 	}
 

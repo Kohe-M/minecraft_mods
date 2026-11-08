@@ -26,6 +26,8 @@ public class XrayClient implements ClientModInitializer {
 	// チャンク構築スレッドから読まれる
 	private static volatile boolean enabled;
 	private static volatile OreMode mode = OreMode.ALL;
+	// Jori の一覧で無効にされている間は false。キーも効かず、ブロックはそのまま描く
+	private static volatile boolean active = true;
 
 	private static int heldTicks;
 
@@ -46,6 +48,13 @@ public class XrayClient implements ClientModInitializer {
 
 	private static void tick(Minecraft client) {
 		Screen screen = client.gui.screen();
+		if (!active) {
+			while (toggle.consumeClick()) {
+				// 無効の間に押した分は、戻したときに効かないよう捨てる
+			}
+			heldTicks = 0;
+			return;
+		}
 		if (screen != null) {
 			// ホイールを閉じた後もキーを離すまでは長押し扱いのままにする
 			if (!(screen instanceof OreWheelScreen)) {
@@ -74,8 +83,24 @@ public class XrayClient implements ClientModInitializer {
 		}
 	}
 
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		if (active == value) {
+			return;
+		}
+		active = value;
+		// 透過中なら、描き直して元のブロックを出す（または透過し直す）
+		Minecraft client = Minecraft.getInstance();
+		if (enabled && client.level != null) {
+			client.levelExtractor.allChanged();
+		}
+	}
+
 	public static boolean isEnabled() {
-		return enabled;
+		return active && enabled;
 	}
 
 	public static OreMode mode() {
