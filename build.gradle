@@ -70,6 +70,11 @@ subprojects {
 		targetCompatibility = JavaVersion.toVersion(javaVersion)
 	}
 
+	// 全 mod のゲームテストで使う道具（testkit/）。各 mod の gametest に一緒にコンパイルする
+	sourceSets.matching { it.name == "gametest" }.configureEach {
+		java.srcDir(rootProject.file("testkit/java"))
+	}
+
 	tasks.matching { it.name == "runClientGameTest" }.configureEach {
 		usesService(minecraftClients)
 		timeout = clientTimeout
