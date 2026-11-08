@@ -5,8 +5,8 @@ import java.nio.file.Path;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.omuraisu.testkit.Asserts;
 import com.omuraisu.testkit.Screenshots;
-import com.omuraisu.xray.client.OreMode;
-import com.omuraisu.xray.client.OreWheelScreen;
+import com.omuraisu.xray.client.XrayMode;
+import com.omuraisu.xray.client.ModeWheelScreen;
 import com.omuraisu.xray.client.XrayClient;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
@@ -22,7 +22,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 public class XrayClientGameTest implements FabricClientGameTest {
-	// OreWheelScreen と同じ外周の半径
+	// ModeWheelScreen と同じ外周の半径
 	private static final int RADIUS = 54;
 	private static final int FAR = 72;
 
@@ -69,12 +69,12 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("wheel-all");
 			context.getInput().releaseKey(XrayClient.toggle);
 			context.waitTick();
-			assertState(context, true, OreMode.ALL);
+			assertState(context, true, XrayMode.ALL);
 			waitForRender(context, singleplayer);
 			context.takeScreenshot("mode-all");
 
 			tap(context);
-			assertState(context, false, OreMode.ALL);
+			assertState(context, false, XrayMode.ALL);
 
 			// ホイールが開くより短い長押しは単押しと同じ
 			context.getInput().holdKey(XrayClient.toggle);
@@ -84,9 +84,9 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			}
 			context.getInput().releaseKey(XrayClient.toggle);
 			context.waitTicks(2);
-			assertState(context, true, OreMode.ALL);
+			assertState(context, true, XrayMode.ALL);
 			tap(context);
-			assertState(context, false, OreMode.ALL);
+			assertState(context, false, XrayMode.ALL);
 
 			// 真上のダイヤを選んで離す
 			openWheel(context);
@@ -94,45 +94,45 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("wheel-diamond");
 			context.getInput().releaseKey(XrayClient.toggle);
 			context.waitTick();
-			assertState(context, true, OreMode.DIAMOND);
+			assertState(context, true, XrayMode.DIAMOND);
 			waitForRender(context, singleplayer);
 			context.takeScreenshot("mode-diamond");
 
 			// 単押しは選んだモードのままオン/オフ
 			tap(context);
-			assertState(context, false, OreMode.DIAMOND);
+			assertState(context, false, XrayMode.DIAMOND);
 			tap(context);
-			assertState(context, true, OreMode.DIAMOND);
+			assertState(context, true, XrayMode.DIAMOND);
 
 			// クリックでも確定する。その後キーを離しても切り替わらない
-			int goldIndex = OreMode.RING.indexOf(OreMode.GOLD);
-			double angle = -Math.PI / 2 + goldIndex * 2 * Math.PI / OreMode.RING.size();
+			int goldIndex = XrayMode.RING.indexOf(XrayMode.GOLD);
+			double angle = -Math.PI / 2 + goldIndex * 2 * Math.PI / XrayMode.RING.size();
 			openWheel(context);
 			moveCursor(context, (int) Math.round(Math.cos(angle) * RADIUS), (int) Math.round(Math.sin(angle) * RADIUS));
 			context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
 			context.waitTick();
-			assertState(context, true, OreMode.GOLD);
+			assertState(context, true, XrayMode.GOLD);
 			context.getInput().releaseKey(XrayClient.toggle);
 			context.waitTicks(2);
-			assertState(context, true, OreMode.GOLD);
+			assertState(context, true, XrayMode.GOLD);
 			waitForRender(context, singleplayer);
 			context.takeScreenshot("mode-gold");
 
 			tap(context);
-			assertState(context, false, OreMode.GOLD);
+			assertState(context, false, XrayMode.GOLD);
 			waitForRender(context, singleplayer);
 			context.takeScreenshot("xray-off-again");
 
 			// Jori で無効にされている間は透過せず、キーも効かない。戻すと透過し直す
 			tap(context);
-			assertState(context, true, OreMode.GOLD);
+			assertState(context, true, XrayMode.GOLD);
 			context.runOnClient(client -> XrayClient.setActive(false));
 			try {
-				assertState(context, false, OreMode.GOLD);
+				assertState(context, false, XrayMode.GOLD);
 				waitForRender(context, singleplayer);
 				context.takeScreenshot("xray-inactive");
 				tap(context);
-				assertState(context, false, OreMode.GOLD);
+				assertState(context, false, XrayMode.GOLD);
 				context.getInput().holdKey(XrayClient.toggle);
 				context.waitTicks(10);
 				if (context.computeOnClient(client -> client.gui.screen()) != null) {
@@ -143,11 +143,11 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			} finally {
 				context.runOnClient(client -> XrayClient.setActive(true));
 			}
-			assertState(context, true, OreMode.GOLD);
+			assertState(context, true, XrayMode.GOLD);
 			waitForRender(context, singleplayer);
 			context.takeScreenshot("xray-active-again");
 			tap(context);
-			assertState(context, false, OreMode.GOLD);
+			assertState(context, false, XrayMode.GOLD);
 
 			// 普通のチェストは、どの鉱石を選んでいても最大の明るさで見せる。64 ブロックより遠くても描く
 			context.getInput().lookAt(chest);
@@ -156,13 +156,13 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			assertChestLight(context, chest, false);
 			assertChestLight(context, farChest, false);
 			tap(context);
-			assertState(context, true, OreMode.GOLD);
+			assertState(context, true, XrayMode.GOLD);
 			waitForRender(context, singleplayer);
 			assertChestShown(context, "chest-gold", true);
 			assertChestLight(context, chest, true);
 			assertChestLight(context, farChest, true);
 			tap(context);
-			assertState(context, false, OreMode.GOLD);
+			assertState(context, false, XrayMode.GOLD);
 		}
 	}
 
@@ -219,7 +219,7 @@ public class XrayClientGameTest implements FabricClientGameTest {
 
 	private static void openWheel(ClientGameTestContext context) {
 		context.getInput().holdKey(XrayClient.toggle);
-		context.waitForScreen(OreWheelScreen.class);
+		context.waitForScreen(ModeWheelScreen.class);
 		context.waitTick();
 	}
 
@@ -244,7 +244,7 @@ public class XrayClientGameTest implements FabricClientGameTest {
 		context.waitTicks(5);
 	}
 
-	private static void assertState(ClientGameTestContext context, boolean enabled, OreMode mode) {
+	private static void assertState(ClientGameTestContext context, boolean enabled, XrayMode mode) {
 		if (XrayClient.isEnabled() != enabled || XrayClient.mode() != mode) {
 			throw new AssertionError("expected " + enabled + "/" + mode + " but was " + XrayClient.isEnabled() + "/" + XrayClient.mode());
 		}

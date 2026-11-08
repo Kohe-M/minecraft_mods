@@ -26,7 +26,7 @@ public class XrayClient implements ClientModInitializer {
 
 	// チャンク構築スレッドから読まれる
 	private static volatile boolean enabled;
-	private static volatile OreMode mode = OreMode.ALL;
+	private static volatile XrayMode mode = XrayMode.ALL;
 	// Jori の一覧で無効にされている間は false。キーも効かず、ブロックはそのまま描く
 	private static volatile boolean active = true;
 
@@ -58,7 +58,7 @@ public class XrayClient implements ClientModInitializer {
 		}
 		if (screen != null) {
 			// ホイールを閉じた後もキーを離すまでは長押し扱いのままにする
-			if (!(screen instanceof OreWheelScreen)) {
+			if (!(screen instanceof ModeWheelScreen)) {
 				heldTicks = 0;
 			}
 			return;
@@ -74,7 +74,7 @@ public class XrayClient implements ClientModInitializer {
 			if (++heldTicks == HOLD_TICKS && client.player != null) {
 				// 直前の ON/OFF 表示がホイールに重なるので消す
 				client.gui.hud.setOverlayMessage(Component.empty(), false);
-				client.gui.setScreen(new OreWheelScreen());
+				client.gui.setScreen(new ModeWheelScreen());
 			}
 		} else {
 			if (heldTicks > 0 ? heldTicks < HOLD_TICKS : clicked) {
@@ -104,7 +104,7 @@ public class XrayClient implements ClientModInitializer {
 		return active && enabled;
 	}
 
-	public static OreMode mode() {
+	public static XrayMode mode() {
 		return mode;
 	}
 
@@ -113,7 +113,7 @@ public class XrayClient implements ClientModInitializer {
 		return state.is(Blocks.CHEST) || mode.matches(state);
 	}
 
-	public static void select(Minecraft client, OreMode selected) {
+	public static void select(Minecraft client, XrayMode selected) {
 		mode = selected;
 		save();
 		setEnabled(client, true);
@@ -130,11 +130,11 @@ public class XrayClient implements ClientModInitializer {
 		}
 	}
 
-	private static OreMode load() {
+	private static XrayMode load() {
 		try {
-			return OreMode.byId(Files.readString(CONFIG).strip().replace("mode=", ""));
+			return XrayMode.byId(Files.readString(CONFIG).strip().replace("mode=", ""));
 		} catch (IOException e) {
-			return OreMode.ALL;
+			return XrayMode.ALL;
 		}
 	}
 

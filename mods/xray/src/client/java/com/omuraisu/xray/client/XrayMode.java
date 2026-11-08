@@ -14,7 +14,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 // ALL 以外はホイールの外周に、この順で上から時計回りに並ぶ
-public enum OreMode {
+public enum XrayMode {
 	ALL("all", Items.DIAMOND_ORE, ConventionalBlockTags.ORES),
 	DIAMOND("diamond", Items.DIAMOND_ORE, ConventionalBlockTags.DIAMOND_ORES, Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),
 	EMERALD("emerald", Items.EMERALD_ORE, ConventionalBlockTags.EMERALD_ORES, Blocks.EMERALD_ORE, Blocks.DEEPSLATE_EMERALD_ORE),
@@ -27,11 +27,11 @@ public enum OreMode {
 	QUARTZ("quartz", Items.NETHER_QUARTZ_ORE, ConventionalBlockTags.QUARTZ_ORES, Blocks.NETHER_QUARTZ_ORE),
 	DEBRIS("debris", Items.ANCIENT_DEBRIS, ConventionalBlockTags.NETHERITE_SCRAP_ORES, Blocks.ANCIENT_DEBRIS);
 
-	public static final List<OreMode> RING = List.of(values()).subList(1, values().length);
+	public static final List<XrayMode> RING = List.of(values()).subList(1, values().length);
 
 	static {
 		// バニラサーバーは c:ores を送ってこないので、ALL もバニラの鉱石を直接持つ
-		for (OreMode mode : RING) {
+		for (XrayMode mode : RING) {
 			ALL.blocks.addAll(mode.blocks);
 		}
 	}
@@ -41,7 +41,7 @@ public enum OreMode {
 	private final TagKey<Block> tag;
 	private final Set<Block> blocks;
 
-	OreMode(String id, Item icon, TagKey<Block> tag, Block... blocks) {
+	XrayMode(String id, Item icon, TagKey<Block> tag, Block... blocks) {
 		this.id = id;
 		this.icon = icon;
 		this.tag = tag;
@@ -56,8 +56,8 @@ public enum OreMode {
 		return Component.translatable("xray.mode." + id);
 	}
 
-	public static OreMode byId(String id) {
-		for (OreMode mode : values()) {
+	public static XrayMode byId(String id) {
+		for (XrayMode mode : values()) {
 			if (mode.id.equals(id)) {
 				return mode;
 			}

@@ -13,7 +13,7 @@ import net.minecraft.world.item.ItemStack;
 
 // キーを押している間だけ開くホイール。中央が全鉱石、外周が鉱石ごと。
 // マウスの方向で選び、キーを離すかクリックで確定する
-public class OreWheelScreen extends Screen {
+public class ModeWheelScreen extends Screen {
 	private static final int RADIUS = 54;
 	private static final int SLOT = 24;
 	private static final int CENTER_SLOT = 30;
@@ -25,9 +25,9 @@ public class OreWheelScreen extends Screen {
 	private static final int HOVER_BORDER_COLOR = 0xFFFFFFFF;
 	private static final int CURRENT_BORDER_COLOR = 0xFF4FD8E0;
 
-	private OreMode hovered = OreMode.ALL;
+	private XrayMode hovered = XrayMode.ALL;
 
-	public OreWheelScreen() {
+	public ModeWheelScreen() {
 		super(Component.translatable("key.xray.toggle"));
 	}
 
@@ -48,19 +48,19 @@ public class OreWheelScreen extends Screen {
 		int cy = height / 2;
 		hovered = pick(mouseX - cx, mouseY - cy);
 
-		slot(graphics, OreMode.ALL, cx, cy, CENTER_SLOT);
+		slot(graphics, XrayMode.ALL, cx, cy, CENTER_SLOT);
 		// 全鉱石は外周の先頭 4 種を小さく並べて表す
-		List<OreMode> preview = OreMode.RING.subList(0, 4);
+		List<XrayMode> preview = XrayMode.RING.subList(0, 4);
 		for (int i = 0; i < preview.size(); i++) {
 			icon(graphics, preview.get(i), cx - 6 + i % 2 * 12, cy - 6 + i / 2 * 12, 0.625F);
 		}
 
-		List<OreMode> ring = OreMode.RING;
+		List<XrayMode> ring = XrayMode.RING;
 		for (int i = 0; i < ring.size(); i++) {
 			double angle = -Math.PI / 2 + i * 2 * Math.PI / ring.size();
 			int x = cx + (int) Math.round(Math.cos(angle) * RADIUS);
 			int y = cy + (int) Math.round(Math.sin(angle) * RADIUS);
-			OreMode mode = ring.get(i);
+			XrayMode mode = ring.get(i);
 			slot(graphics, mode, x, y, SLOT);
 			icon(graphics, mode, x, y, mode == hovered ? 1.25F : 1.0F);
 		}
@@ -69,7 +69,7 @@ public class OreWheelScreen extends Screen {
 		graphics.centeredText(font, hovered.displayName(), cx, cy - RADIUS - SLOT / 2 - 14, 0xFFFFFFFF);
 	}
 
-	private void slot(GuiGraphicsExtractor graphics, OreMode mode, int x, int y, int size) {
+	private void slot(GuiGraphicsExtractor graphics, XrayMode mode, int x, int y, int size) {
 		int left = x - size / 2;
 		int top = y - size / 2;
 		graphics.fill(left, top, left + size, top + size, mode == hovered ? HOVER_COLOR : SLOT_COLOR);
@@ -80,7 +80,7 @@ public class OreWheelScreen extends Screen {
 		}
 	}
 
-	private static void icon(GuiGraphicsExtractor graphics, OreMode mode, int x, int y, float scale) {
+	private static void icon(GuiGraphicsExtractor graphics, XrayMode mode, int x, int y, float scale) {
 		graphics.pose().pushMatrix();
 		graphics.pose().translate(x, y);
 		graphics.pose().scale(scale, scale);
@@ -88,11 +88,11 @@ public class OreWheelScreen extends Screen {
 		graphics.pose().popMatrix();
 	}
 
-	private static OreMode pick(int dx, int dy) {
+	private static XrayMode pick(int dx, int dy) {
 		if (dx * dx + dy * dy < DEADZONE * DEADZONE) {
-			return OreMode.ALL;
+			return XrayMode.ALL;
 		}
-		List<OreMode> ring = OreMode.RING;
+		List<XrayMode> ring = XrayMode.RING;
 		double step = 2 * Math.PI / ring.size();
 		// 真上を 0 として時計回り（画面の y は下向き）
 		double angle = Math.atan2(dy, dx) + Math.PI / 2;
