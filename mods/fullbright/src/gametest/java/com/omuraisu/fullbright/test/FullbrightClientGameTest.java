@@ -1,14 +1,13 @@
 package com.omuraisu.fullbright.test;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
 
-import com.mojang.blaze3d.platform.NativeImage;
 import com.omuraisu.fullbright.client.FullbrightClient;
+import com.omuraisu.testkit.Screenshots;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -251,7 +250,7 @@ public class FullbrightClientGameTest implements FabricClientGameTest {
 
 	private static void assertUniforms(ClientGameTestContext context, String name, float nightVision, float screenBrightness) {
 		context.waitTicks(5);
-		int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(image.getWidth() / 4, image.getHeight() / 4));
+		int pixel = Screenshots.read(context.takeScreenshot(name), image -> image.getPixel(image.getWidth() / 4, image.getHeight() / 4));
 		float actualNightVision = ARGB.red(pixel) / 255f;
 		float actualBrightness = ARGB.green(pixel) / 255f;
 		if (Math.abs(actualNightVision - nightVision) > 0.02f || Math.abs(actualBrightness - screenBrightness) > 0.02f) {
@@ -267,7 +266,7 @@ public class FullbrightClientGameTest implements FabricClientGameTest {
 	// 画面の左上の平均の明るさ（0〜255）。ホットバーや手を避ける
 	private static double brightness(ClientGameTestContext context, String name) {
 		context.waitTicks(5);
-		return readImage(context.takeScreenshot(name), image -> {
+		return Screenshots.read(context.takeScreenshot(name), image -> {
 			long sum = 0;
 			int count = 0;
 			for (int y = image.getHeight() / 8; y < image.getHeight() / 2; y++) {
@@ -279,18 +278,6 @@ public class FullbrightClientGameTest implements FabricClientGameTest {
 			}
 			return (double) sum / count;
 		});
-	}
-
-	private static <T> T readImage(Path path, ImageReader<T> reader) {
-		try (InputStream in = Files.newInputStream(path); NativeImage image = NativeImage.read(in)) {
-			return reader.read(image);
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
-	}
-
-	private interface ImageReader<T> {
-		T read(NativeImage image);
 	}
 
 	// Iris がないときに読み込まれないようにクラスを分ける
