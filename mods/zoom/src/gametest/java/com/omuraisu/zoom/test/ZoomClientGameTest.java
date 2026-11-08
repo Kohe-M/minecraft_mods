@@ -80,6 +80,28 @@ public class ZoomClientGameTest implements FabricClientGameTest {
 			if (selectedSlot(context) == slot) {
 				throw new AssertionError("hotbar slot should change after release");
 			}
+
+			// Jori で無効にされている間は、押してもズームせず、ホイールはホットバーに回る
+			context.runOnClient(client -> ZoomClient.setActive(false));
+			try {
+				context.getInput().holdKey(ZoomClient.key);
+				context.waitTicks(SETTLE_TICKS);
+				assertFov(context, base);
+				int before = selectedSlot(context);
+				context.getInput().scroll(1);
+				context.waitTick();
+				if (selectedSlot(context) == before) {
+					throw new AssertionError("scroll should reach the hotbar while inactive");
+				}
+				context.getInput().releaseKey(ZoomClient.key);
+			} finally {
+				context.runOnClient(client -> ZoomClient.setActive(true));
+			}
+			context.getInput().holdKey(ZoomClient.key);
+			context.waitTicks(SETTLE_TICKS);
+			assertFov(context, ZoomClient.apply(base, ZoomClient.DEFAULT_LEVEL));
+			context.getInput().releaseKey(ZoomClient.key);
+			context.waitTicks(SETTLE_TICKS);
 		}
 	}
 

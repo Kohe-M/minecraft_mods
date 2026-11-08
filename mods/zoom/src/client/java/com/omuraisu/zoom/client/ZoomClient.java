@@ -22,6 +22,9 @@ public class ZoomClient implements ClientModInitializer {
 
 	public static KeyMapping key;
 
+	// Jori の一覧で無効にされている間は false。キーを押してもズームしない
+	private static volatile boolean active = true;
+
 	private static float level = DEFAULT_LEVEL;
 	private static float zoom = 1;
 	private static float oldZoom = 1;
@@ -38,12 +41,12 @@ public class ZoomClient implements ClientModInitializer {
 	}
 
 	private static void tick(Minecraft client) {
-		boolean active = isActive(client);
-		if (!active) {
+		boolean zooming = isZooming(client);
+		if (!zooming) {
 			level = DEFAULT_LEVEL;
 		}
 
-		float target = active ? level : 1;
+		float target = zooming ? level : 1;
 		oldZoom = zoom;
 		zoom *= (float) Math.pow(target / zoom, SMOOTHING);
 		if (Math.abs(zoom / target - 1) < 0.001f) {
@@ -51,8 +54,16 @@ public class ZoomClient implements ClientModInitializer {
 		}
 	}
 
-	private static boolean isActive(Minecraft client) {
-		return key.isDown() && client.gui.screen() == null;
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		active = value;
+	}
+
+	private static boolean isZooming(Minecraft client) {
+		return active && key.isDown() && client.gui.screen() == null;
 	}
 
 	public static float level() {
@@ -69,7 +80,7 @@ public class ZoomClient implements ClientModInitializer {
 
 	// 倍率を変えたらホットバーには回さない
 	public static boolean scroll(Minecraft client, double amount) {
-		if (!isActive(client)) {
+		if (!isZooming(client)) {
 			return false;
 		}
 		level = Mth.clamp(level * (float) Math.pow(SCROLL_STEP, amount), MIN_LEVEL, MAX_LEVEL);
