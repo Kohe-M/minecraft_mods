@@ -37,14 +37,20 @@ import net.minecraft.world.item.equipment.Equippable;
 
 // 並び順の仕様は AGENTS.md の「sorter の並び順」を参照
 public final class SortOrder {
-	// 宣言順がそのまま並び順
+	// 宣言順がそのまま並び順。band が同じグループは関連が深く、同じ行に並んでもよい
 	public enum Group {
-		TOOLS, WEAPONS, ARMOR,
-		FOOD, POTIONS, UTILITY,
-		BOOKS, MATERIALS,
-		FUNCTIONAL, REDSTONE,
-		BUILDING, COLORED, NATURAL,
-		SPAWN_EGGS
+		TOOLS(0), WEAPONS(0), ARMOR(0),
+		FOOD(1), POTIONS(1), UTILITY(1),
+		BOOKS(2), MATERIALS(2),
+		FUNCTIONAL(3), REDSTONE(3),
+		BUILDING(4), COLORED(4), NATURAL(4),
+		SPAWN_EGGS(5);
+
+		public final int band;
+
+		Group(int band) {
+			this.band = band;
+		}
 	}
 
 	// クリエイティブタブの並びをゲーム内の「見慣れた順」として使う。op_blocks は権限で中身が変わるので触らない

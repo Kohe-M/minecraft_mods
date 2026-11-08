@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.omuraisu.sorter.SortOrder;
+import com.omuraisu.sorter.Sorter;
 
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
@@ -23,8 +24,7 @@ import net.minecraft.world.item.Items;
 // 並び方の使いやすさを点数にする。分類はクリエイティブタブを使い、Sorter 自身の分類に有利にならないようにする
 final class SortEvaluation {
 	static final int WIDTH = 9;
-	static final double[] WEIGHTS = {0.30, 0.15, 0.20, 0.20};
-	static final int STABILITY = 3;
+	static final double[] WEIGHTS = {0.30, 0.15, 0.20, 0.15, 0.20};
 
 	private static final Map<SortOrder.Group, Double> USE = Map.of(
 			SortOrder.Group.UTILITY, 1.0, SortOrder.Group.WEAPONS, 0.9, SortOrder.Group.POTIONS, 0.9,
@@ -97,7 +97,17 @@ final class SortEvaluation {
 				compact("ID順(1.0.0)", Comparator.comparingInt(stack -> BuiltInRegistries.ITEM.getId(stack.getItem())), capacity),
 				compact("名前順", Comparator.comparing(stack -> stack.getHoverName().getString()), capacity),
 				compact("タブ順", Comparator.<ItemStack>comparingInt(stack -> CREATIVE_TABS.indexOf(tab(stack))).thenComparingInt(order::rank), capacity),
-				compact("新順序", order.comparator(), capacity));
+				compact("新順序のみ", order.comparator(), capacity),
+				new Strategy("新順序+行そろえ", stacks -> {
+					List<ItemStack> sorted = new ArrayList<>(stacks);
+					sorted.sort(order.comparator());
+					int[] positions = Sorter.positions(sorted, order, WIDTH, capacity);
+					ItemStack[] grid = new ItemStack[capacity];
+					for (int i = 0; i < sorted.size(); i++) {
+						grid[positions[i]] = sorted.get(i);
+					}
+					return grid;
+				}));
 	}
 
 	private static Strategy compact(String name, Comparator<ItemStack> comparator, int capacity) {
@@ -114,7 +124,7 @@ final class SortEvaluation {
 
 	double[] evaluate(Strategy strategy, Scenario scenario) {
 		ItemStack[] grid = strategy.layout().apply(scenario.stacks());
-		return new double[] {cohesion(grid), neighbors(grid), reach(grid), stability(strategy, scenario, grid)};
+		return new double[] {cohesion(grid), neighbors(grid), reach(grid), rows(grid), stability(strategy, scenario, grid)};
 	}
 
 	static double total(double[] metrics, double[] weights) {
@@ -122,7 +132,7 @@ final class SortEvaluation {
 		for (int i = 0; i < metrics.length; i++) {
 			total += metrics[i] * weights[i];
 		}
-		return total / Arrays.stream(weights).sum() * 100;
+		return total * 100;
 	}
 
 	static double[] randomWeights(Random random) {
@@ -227,6 +237,28 @@ final class SortEvaluation {
 
 	private static int distance(int slot) {
 		return slot / WIDTH + slot % WIDTH;
+	}
+
+	// カテゴリの切れ目が行の切れ目か空きと重なっているか
+	private double rows(ItemStack[] grid) {
+		int changes = 0;
+		int aligned = 0;
+		ItemStack previous = null;
+		int previousSlot = -1;
+		for (int i = 0; i < grid.length; i++) {
+			if (grid[i] == null) {
+				continue;
+			}
+			if (previous != null && tab(previous) != tab(grid[i])) {
+				changes++;
+				if (i % WIDTH == 0 || i != previousSlot + 1) {
+					aligned++;
+				}
+			}
+			previous = grid[i];
+			previousSlot = i;
+		}
+		return changes == 0 ? 1 : (double) aligned / changes;
 	}
 
 	// 1種類増減したときに、他のスタックが同じ場所に留まるか

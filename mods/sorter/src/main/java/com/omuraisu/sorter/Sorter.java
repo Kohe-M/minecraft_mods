@@ -73,14 +73,16 @@ public class Sorter implements ModInitializer {
 	public static void sortSlots(List<Slot> slots, SortOrder order) {
 		List<ItemStack> stacks = merge(slots);
 		stacks.sort(order.comparator());
+		int[] positions = positions(stacks, order, rowWidth(slots), slots.size());
 
 		for (int i = 0; i < stacks.size(); i++) {
-			if (!slots.get(i).mayPlace(stacks.get(i))) {
+			if (!slots.get(positions[i]).mayPlace(stacks.get(i))) {
 				return;
 			}
 		}
-		for (int i = 0; i < slots.size(); i++) {
-			slots.get(i).set(i < stacks.size() ? stacks.get(i) : ItemStack.EMPTY);
+		slots.forEach(slot -> slot.set(ItemStack.EMPTY));
+		for (int i = 0; i < stacks.size(); i++) {
+			slots.get(positions[i]).set(stacks.get(i));
 		}
 	}
 
@@ -104,5 +106,34 @@ public class Sorter implements ModInitializer {
 			}
 		}
 		return stacks;
+	}
+
+	// 並べ替え済みのスタックそれぞれの置き場所（slots の添字）を返す
+	public static int[] positions(List<ItemStack> sorted, SortOrder order, int width, int capacity) {
+		List<SortOrder.Group> groups = new ArrayList<>();
+		List<Integer> sizes = new ArrayList<>();
+		for (ItemStack stack : sorted) {
+			SortOrder.Group group = order.group(stack);
+			if (groups.isEmpty() || groups.getLast() != group) {
+				groups.add(group);
+				sizes.add(0);
+			}
+			sizes.set(sizes.size() - 1, sizes.getLast() + 1);
+		}
+
+		int[] starts = SortLayout.place(sizes.stream().mapToInt(Integer::intValue).toArray(), groups.stream().mapToInt(group -> group.band).toArray(), width, capacity);
+		int[] positions = new int[sorted.size()];
+		int next = 0;
+		for (int group = 0; group < starts.length; group++) {
+			for (int i = 0; i < sizes.get(group); i++) {
+				positions[next++] = starts[group] + i;
+			}
+		}
+		return positions;
+	}
+
+	private static int rowWidth(List<Slot> slots) {
+		int y = slots.getFirst().y;
+		return (int) slots.stream().filter(slot -> slot.y == y).count();
 	}
 }
