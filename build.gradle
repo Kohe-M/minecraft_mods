@@ -1,6 +1,23 @@
+import java.time.Duration
+
+import org.gradle.api.services.BuildService
+import org.gradle.api.services.BuildServiceParameters
+
 plugins {
 	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
 }
+
+// 同時に起動する Minecraft のクライアント（runClientGameTest）の数。
+// 全 mod を一度に起動すると、どれかが起動の途中で止まることがある。-PclientSlots=N で変えられる
+abstract class MinecraftClients implements BuildService<BuildServiceParameters.None> {
+}
+
+def minecraftClients = gradle.sharedServices.registerIfAbsent("minecraftClients", MinecraftClients) {
+	maxParallelUsages = providers.gradleProperty("clientSlots").map { it as int }.orElse(3)
+}
+
+// 起動の途中で止まったクライアントを待ち続けない。-PclientTimeout=分 で変えられる
+def clientTimeout = Duration.ofMinutes(providers.gradleProperty("clientTimeout").map { it as long }.getOrElse(10L))
 
 subprojects {
 	apply plugin: 'net.fabricmc.fabric-loom'
@@ -51,6 +68,11 @@ subprojects {
 
 		sourceCompatibility = JavaVersion.toVersion(javaVersion)
 		targetCompatibility = JavaVersion.toVersion(javaVersion)
+	}
+
+	tasks.matching { it.name == "runClientGameTest" }.configureEach {
+		usesService(minecraftClients)
+		timeout = clientTimeout
 	}
 
 	jar {
