@@ -1,10 +1,5 @@
 package com.omuraisu.refill.test;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.ServerSocket;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -12,6 +7,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.omuraisu.refill.client.RefillClient;
+import com.omuraisu.testkit.TestServers;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -222,19 +218,8 @@ public class RefillClientGameTest implements FabricClientGameTest {
 	// サーバーに mod が無くても動く
 	private static void testDedicatedServer(ClientGameTestContext context) {
 		Properties properties = new Properties();
-		try {
-			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
-			Files.writeString(Path.of("eula.txt"), "eula=true\n");
-			// 普段のサーバーと重ならないよう空いているポートを使う
-			try (ServerSocket socket = new ServerSocket(0)) {
-				properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
-			}
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
 		properties.setProperty("spawn-protection", "0");
-
-		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties);
+		try (TestDedicatedServerContext server = TestServers.create(context, properties);
 				TestDedicatedServerConnection connection = server.connect()) {
 			connection.waitForChunksRender();
 			Scene scene = new Scene(context, server);
