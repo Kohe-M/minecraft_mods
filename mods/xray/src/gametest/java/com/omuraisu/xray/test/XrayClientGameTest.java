@@ -76,6 +76,18 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			tap(context);
 			assertState(context, false, OreMode.ALL);
 
+			// ホイールが開くより短い長押しは単押しと同じ
+			context.getInput().holdKey(XrayClient.toggle);
+			context.waitTicks(XrayClient.HOLD_TICKS - 2);
+			if (context.computeOnClient(client -> client.gui.screen()) != null) {
+				throw new AssertionError("wheel should not open before " + XrayClient.HOLD_TICKS + " ticks");
+			}
+			context.getInput().releaseKey(XrayClient.toggle);
+			context.waitTicks(2);
+			assertState(context, true, OreMode.ALL);
+			tap(context);
+			assertState(context, false, OreMode.ALL);
+
 			// 真上のダイヤを選んで離す
 			openWheel(context);
 			moveCursor(context, 0, -RADIUS);

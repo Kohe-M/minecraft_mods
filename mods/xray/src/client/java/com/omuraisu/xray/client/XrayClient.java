@@ -21,8 +21,8 @@ import net.minecraft.world.level.block.state.BlockState;
 public class XrayClient implements ClientModInitializer {
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("xray.txt");
 
-	// これ以上押し続けるとホイールを開く（約 0.25 秒）
-	private static final int HOLD_TICKS = 5;
+	// これ以上押し続けるとホイールを開く（0.4 秒）。短いと、単押しのつもりでもホイールが開いてしまう
+	public static final int HOLD_TICKS = 8;
 
 	// チャンク構築スレッドから読まれる
 	private static volatile boolean enabled;
