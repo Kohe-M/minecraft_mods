@@ -6,7 +6,7 @@
 	"jori.description.refill": "Refills your hand from the inventory the moment you use up the item you are holding.",
 	"jori.description.sorter": "Adds a sort button to the inventory and chest screens.",
 	"jori.description.timber": "Breaking one log with an axe fells the whole tree.",
-	"jori.description.xray": "Hides everything but ores and lights them up.",
+	"jori.description.xray": "Hides everything but ores and chests and lights them up.",
 	"jori.description.zoom": "Zooms in while you hold the key.",
 	"jori.missing_on_server": "Not available on this server"
 }
