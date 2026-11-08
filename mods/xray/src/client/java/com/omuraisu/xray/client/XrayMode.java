@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 // ALL 以外はホイールの外周に、この順で上から時計回りに並ぶ
+// チェストはどのモードでも見せる（XrayClient.isVisible）
 public enum XrayMode {
 	ALL("all", Items.DIAMOND_ORE, ConventionalBlockTags.ORES),
 	DIAMOND("diamond", Items.DIAMOND_ORE, ConventionalBlockTags.DIAMOND_ORES, Blocks.DIAMOND_ORE, Blocks.DEEPSLATE_DIAMOND_ORE),
@@ -25,7 +26,9 @@ public enum XrayMode {
 	REDSTONE("redstone", Items.REDSTONE_ORE, ConventionalBlockTags.REDSTONE_ORES, Blocks.REDSTONE_ORE, Blocks.DEEPSLATE_REDSTONE_ORE),
 	LAPIS("lapis", Items.LAPIS_ORE, ConventionalBlockTags.LAPIS_ORES, Blocks.LAPIS_ORE, Blocks.DEEPSLATE_LAPIS_ORE),
 	QUARTZ("quartz", Items.NETHER_QUARTZ_ORE, ConventionalBlockTags.QUARTZ_ORES, Blocks.NETHER_QUARTZ_ORE),
-	DEBRIS("debris", Items.ANCIENT_DEBRIS, ConventionalBlockTags.NETHERITE_SCRAP_ORES, Blocks.ANCIENT_DEBRIS);
+	DEBRIS("debris", Items.ANCIENT_DEBRIS, ConventionalBlockTags.NETHERITE_SCRAP_ORES, Blocks.ANCIENT_DEBRIS),
+	// 鉱石は出さず、エンティティとチェストだけを見せる
+	ENTITIES("entities", Items.ZOMBIE_HEAD, null);
 
 	public static final List<XrayMode> RING = List.of(values()).subList(1, values().length);
 
@@ -49,7 +52,7 @@ public enum XrayMode {
 	}
 
 	public boolean matches(BlockState state) {
-		return blocks.contains(state.getBlock()) || state.is(tag);
+		return blocks.contains(state.getBlock()) || tag != null && state.is(tag);
 	}
 
 	public Component displayName() {

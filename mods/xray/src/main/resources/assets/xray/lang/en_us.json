@@ -1,6 +1,6 @@
 {
 	"key.category.xray.main": "X-Ray",
-	"key.xray.toggle": "Toggle X-Ray (hold for ore wheel)",
+	"key.xray.toggle": "Toggle X-Ray (hold for mode wheel)",
 	"message.xray.enabled": "X-Ray: ON (%s)",
 	"message.xray.disabled": "X-Ray: OFF",
 	"xray.mode.all": "All Ores",
@@ -13,5 +13,6 @@
 	"xray.mode.redstone": "Redstone",
 	"xray.mode.lapis": "Lapis Lazuli",
 	"xray.mode.quartz": "Nether Quartz",
-	"xray.mode.debris": "Ancient Debris"
+	"xray.mode.debris": "Ancient Debris",
+	"xray.mode.entities": "Entities & Chests"
 }

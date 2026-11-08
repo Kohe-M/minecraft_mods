@@ -64,6 +64,7 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 |---|---|---|
 | xray | `RenderSectionRegion`（チャンク構築が読むワールドのコピー） | Sodium の `LevelSlice` |
 | xray のチェスト | `BlockEntityRenderDispatcher`（ブロックエンティティの描画の状態） | 同じ |
+| xray のエンティティ | `EntityRenderer`（明るさと描く距離） | 同じ |
 | fullbright | `LightmapRenderStateExtractor`（ライトマップ） | Iris の `CommonUniforms`（シェーダーパックの uniform） |
 
 - Sodium のチャンクの作り直しは、バニラと同じ `Minecraft.levelExtractor.allChanged()` で起きる

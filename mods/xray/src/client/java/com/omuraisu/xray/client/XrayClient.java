@@ -108,6 +108,10 @@ public class XrayClient implements ClientModInitializer {
 		return mode;
 	}
 
+	public static boolean showsEntities() {
+		return isEnabled() && mode == XrayMode.ENTITIES;
+	}
+
 	// 宝箱を探せるように、普通のチェストはどの鉱石を選んでいても見せる
 	public static boolean isVisible(BlockState state) {
 		return state.is(Blocks.CHEST) || mode.matches(state);

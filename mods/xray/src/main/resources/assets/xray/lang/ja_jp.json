@@ -1,8 +1,8 @@
 {
 	"key.category.xray.main": "X-Ray",
-	"key.xray.toggle": "鉱石透過（長押しでホイール）",
-	"message.xray.enabled": "鉱石透過: ON（%s）",
-	"message.xray.disabled": "鉱石透過: OFF",
+	"key.xray.toggle": "透視（長押しでホイール）",
+	"message.xray.enabled": "透視: ON（%s）",
+	"message.xray.disabled": "透視: OFF",
 	"xray.mode.all": "すべての鉱石",
 	"xray.mode.diamond": "ダイヤモンド",
 	"xray.mode.emerald": "エメラルド",
@@ -13,5 +13,6 @@
 	"xray.mode.redstone": "レッドストーン",
 	"xray.mode.lapis": "ラピスラズリ",
 	"xray.mode.quartz": "ネザークォーツ",
-	"xray.mode.debris": "古代の残骸"
+	"xray.mode.debris": "古代の残骸",
+	"xray.mode.entities": "エンティティとチェスト"
 }

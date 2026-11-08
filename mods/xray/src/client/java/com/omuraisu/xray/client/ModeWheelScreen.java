@@ -11,7 +11,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 
-// キーを押している間だけ開くホイール。中央が全鉱石、外周が鉱石ごと。
+// キーを押している間だけ開くホイール。中央が全鉱石、外周が鉱石ごとと、エンティティとチェスト。
 // マウスの方向で選び、キーを離すかクリックで確定する
 public class ModeWheelScreen extends Screen {
 	private static final int RADIUS = 54;
