@@ -6,7 +6,7 @@
 	"jori.description.refill": "手に持ったアイテムを使い切ると、インベントリの同じアイテムをすぐに補充します。",
 	"jori.description.sorter": "インベントリやチェストの画面にソートボタンを出します。",
 	"jori.description.timber": "斧で原木を 1 つ壊すと、つながった木をまるごと伐採します。",
-	"jori.description.xray": "鉱石とチェスト以外のブロックを透過して、それだけを明るく出します。",
+	"jori.description.xray": "鉱石とチェスト以外のブロックを透過して、それだけを明るく出します。エンティティとチェストだけを見せるモードもあります。",
 	"jori.description.zoom": "キーを押している間だけ視界をズームします。",
 	"jori.missing_on_server": "このサーバーでは使えません"
 }
