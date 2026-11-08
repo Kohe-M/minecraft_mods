@@ -1,0 +1,27 @@
+{
+	"schemaVersion": 1,
+	"id": "jori",
+	"version": "${version}",
+	"name": "Jori",
+	"description": "omuraisu の mod をひとまとめにします。タイトル画面とポーズ画面のボタンから、それぞれの有効・無効を切り替えられます。",
+	"authors": [
+		"omuraisu"
+	],
+	"license": "CC0-1.0",
+	"icon": "assets/jori/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.omuraisu.jori.Jori"
+		],
+		"client": [
+			"com.omuraisu.jori.client.JoriClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=${java_version}",
+		"fabric-api": "*"
+	}
+}

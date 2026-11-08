@@ -1,0 +1,42 @@
+repositories {
+	maven {
+		name = "Modrinth"
+		url = "https://api.modrinth.com/maven"
+		content {
+			includeGroup "maven.modrinth"
+		}
+	}
+}
+
+// 中に入れる mod。各 mod の jar をそのまま入れるので、mod ID・パケット・設定ファイルは単体のときと同じ
+def modules = ['fullbright', 'minimap', 'peek', 'placer', 'refill', 'sorter', 'timber', 'xray', 'zoom']
+
+dependencies {
+	modules.each {
+		implementation project(":$it")
+		include project(":$it")
+	}
+
+	// -PnoSodium でバニラ描画のまま起動できる
+	if (!project.hasProperty("noSodium")) {
+		localRuntime "maven.modrinth:sodium:${sodium_version}"
+		localRuntime "maven.modrinth:iris:${iris_version}"
+	}
+}
+
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = "jori-gametest"
+		enableGameTests = false
+		enableClientGameTests = true
+	}
+}
+
+// 各 mod は client のクラスを別のソースセットに持つ。jar を参照して client のクラスも見えるようにする。
+// ソースセットを作るときに上書きされるので、gametest を作った後に置く
+configurations.matching { it.name.endsWith("CompileClasspath") }.configureEach {
+	attributes {
+		attribute(LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE, objects.named(LibraryElements, LibraryElements.JAR))
+	}
+}

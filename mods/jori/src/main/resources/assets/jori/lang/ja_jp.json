@@ -1,0 +1,12 @@
+{
+	"jori.description.fullbright": "明るさの上限を超えて、暗い場所も見えるようにします。",
+	"jori.description.minimap": "画面の右上に周りの地図を出します。マップ画面ではピンを刺せて、ピンの位置には光の柱が立ちます。",
+	"jori.description.peek": "シュルカーボックスにカーソルを合わせると、中身をアイコンで出します。",
+	"jori.description.placer": "長押しで連続して置くとき、上に積み上がったり狙いからズレたりしないようにします。",
+	"jori.description.refill": "手に持ったアイテムを使い切ると、インベントリの同じアイテムをすぐに補充します。",
+	"jori.description.sorter": "インベントリやチェストの画面にソートボタンを出します。",
+	"jori.description.timber": "斧で原木を 1 つ壊すと、つながった木をまるごと伐採します。",
+	"jori.description.xray": "鉱石以外のブロックを透過して、鉱石だけを明るく出します。",
+	"jori.description.zoom": "キーを押している間だけ視界をズームします。",
+	"jori.missing_on_server": "このサーバーでは使えません"
+}

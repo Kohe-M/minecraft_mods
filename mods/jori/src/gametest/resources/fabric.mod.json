@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "jori-gametest",
+	"version": "1.0.0",
+	"name": "Jori GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.omuraisu.jori.test.JoriClientGameTest"
+		]
+	},
+	"depends": {
+		"jori": "*"
+	}
+}

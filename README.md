@@ -3,6 +3,7 @@
 | mod | | クライアント | サーバー |
 |---|---|:---:|:---:|
 | [fullbright](mods/fullbright) | 明るさ上限突破（Sodium / Iris 対応） | 必須 | 不要 |
+| [jori](mods/jori) | ここにある mod をすべてまとめたもの。タイトル画面とポーズ画面のボタンから mod ごとに有効・無効を切り替え | 必須 | 任意（minimap・sorter・timber のサーバー側が入る） |
 | [minimap](mods/minimap) | ミニマップとピン（M のマップ画面で B キーで刺す、Shift + 左クリックで抜く、ピンの位置に光の柱、他のプレイヤーも表示） | 必須 | 任意（マップ画面に描画距離の外も出る） |
 | [peek](mods/peek) | シュルカーボックスにカーソルを合わせると、中身をアイテムのアイコンで表示 | 必須 | 不要 |
 | [placer](mods/placer) | 長押しの連続設置で積み上がりやズレを防ぐ（J キーでオン/オフ） | 必須 | 不要 |
@@ -12,7 +13,7 @@
 | [xray](mods/xray) | 鉱石透視（Sodium / Iris 対応） | 必須 | 不要 |
 | [zoom](mods/zoom) | 長押しズーム | 必須 | 不要 |
 
-シングルプレイはクライアントに入れるだけでよい。
+シングルプレイはクライアントに入れるだけでよい。jori を入れれば、ほかの mod は入れなくてよい（個別の mod と一緒に入れたときは、バージョンの新しい方が使われる）。
 
 ## 構成
 
@@ -26,6 +27,7 @@ minecraft_mods/
    │  ├─ gradle.properties mod_version
    │  ├─ build.gradle      その mod だけの設定
    │  └─ src/
+   ├─ jori/             ほかの mod の jar を中に入れて、有効・無効を切り替える
    ├─ minimap/
    ├─ peek/
    ├─ placer/
@@ -37,6 +39,12 @@ minecraft_mods/
 ```
 
 成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。
+
+## Jori の設定
+
+有効・無効は `config/jori.txt` に 1 行ずつ「mod ID=true」か「mod ID=false」で残る。書いていない mod は有効。
+
+専用サーバーでは、起動するときにこのファイルを読む（minimap・sorter・timber の 3 つだけ）。無効にした mod はサーバー側の受け口を作らないので、クライアントにはその mod がないサーバーと同じに見える（ソートボタンが出ない、など）。
 
 ## ブランチとタグ
 
