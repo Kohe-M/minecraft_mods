@@ -11,6 +11,7 @@
 - `ClientLevel.hasChunk` は常に true を返す。クライアントがチャンクを持っているかは `getChunkSource().getChunk(x, z, ChunkStatus.FULL, false) != null` で見る
 - `ServerChunkCache.getChunkFuture(..., true)` が付ける札（`TicketType.UNKNOWN`）は 1 tick で外れ、生成が終わる前に捨てられることがある。非同期に読み込むときは `FLAG_CAN_EXPIRE_IF_UNLOADED` のない `TicketType` の札を付ける。時間は `ChunkHolder.isReadyForSaving`（生成の途中でない）になってから数えるので、FULL より前の状態まで（`ChunkLevel.byStatus`）の札でも外れる
 - `IOWorker` は読み込みを保存より先に回す。読み込みを詰め続けると保存が進まず、書く前のチャンクがメモリに溜まる。読み込みは IO スレッド 1 本で展開・読み解きまで行うので、多く読むならリージョンファイルを自分で読む
+- チャンクの生成の段階は STRUCTURE_STARTS・STRUCTURE_REFERENCES・BIOMES・TERRAIN（ノイズ・地表・洞窟をまとめたもの）・FEATURES の順。生成の仕事は `ChunkMap.worldgenTaskDispatcher`（`ChunkTaskDispatcher`）が `ChunkTaskPriorityQueue` に、チャンクのレベル（`ChunkHolder.getQueueLevel`）を段にして並べる。小さい段から 1 チャンクずつ取り出し、1 本の列（`ConsecutiveExecutor` の worldgen）で順に動かす。構造物と地物の配置はこの列の中で同期に動き、BIOMES と TERRAIN の中身だけが `Util.backgroundExecutor()`（コア数 − 1 本、ほかの仕事と共有）に出る。レベルが変わると `resortChunkTasks` が古いレベルの段から仕事を探して移す
 - `ServerChunkCache.getChunkFuture` をメインスレッドから呼ぶと、そのチャンクができるまでメインスレッドで待つ（`managedBlock`）。待たずに頼むときは別のスレッドから呼ぶ（メインスレッドへのタスクになる）
 - サーバーの遅れは `getNextTickTime()` と今の時刻の差では測れない（クライアントのゲームテストではいつも 0.5 秒ほど遅れて見える）。直近の数 tick にかかった実時間で測る
 - ワールドから外れたチャンクの保存（`ChunkMap.processUnloads`）は、待ちが 2000 を超えた分と、tick の合間に時間が余っている間だけ進む。クライアントのゲームテストの内蔵サーバーは時間が余らない扱いなので、多くのチャンクを生成した後は 2000 個が保存待ちのまま残る（`pendingUnloads`）。テストではメモリにある方の状態も見る
