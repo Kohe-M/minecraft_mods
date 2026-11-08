@@ -2,7 +2,9 @@
 
 - 非難読化・Mojang 名
 - 描画は `extract*` / `GuiGraphicsExtractor`、画面は `Minecraft.gui.screen()` / `gui.setScreen()`
+- HUD を隠す（F1）のは `Minecraft.gui.hud.toggle()` / `isHidden()`。`Options.hideGui` はない
 - `InputConstants.MOUSE_BUTTON_LEFT` は 1（GLFW の 0 ではない）。クライアントゲームテストの `pressMouse` もこれを使う
+- チェストなどのブロックエンティティはチャンクのメッシュに入らず、`BlockEntityRenderDispatcher.tryExtractRenderState` で描画の状態を作る（Sodium も同じ）。明るさ（`lightCoords`）は本物のワールドから読み、`BlockEntityRenderer.shouldRender` は既定で 64 ブロックより遠いものを描かない
 - 全チャンクの再構築は `Minecraft.levelExtractor.allChanged()`（F3+A と同じ）。`levelRenderer.invalidateCompiledGeometry` を直接呼ぶと、素の描画では再構築が予約されず何も描かれなくなる
 - クライアントゲームテストの入力は、マウスのイベントに修飾キーを載せない。Shift の判定は `event.hasShiftDown()` ではなく `Minecraft.hasShiftDown()` を使う
 - `GameRenderer.projectPointToScreen` はカメラの後ろの点も画面の中に写す。前後はカメラの向きとの内積で判定する
