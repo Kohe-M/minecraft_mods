@@ -28,7 +28,18 @@ public class Timber implements ModInitializer {
 
 	private static final Set<UUID> DISABLED = new HashSet<>();
 
+	// Jori の一覧で無効にされている間は false。誰が壊しても 1 つずつ
+	private static volatile boolean active = true;
+
 	private static boolean felling;
+
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		active = value;
+	}
 
 	public static void setEnabled(Player player, boolean enabled) {
 		if (enabled) {
@@ -41,11 +52,17 @@ public class Timber implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		PayloadTypeRegistry.serverboundPlay().register(TogglePayload.TYPE, TogglePayload.CODEC);
-		ServerPlayNetworking.registerGlobalReceiver(TogglePayload.TYPE, (payload, context) -> setEnabled(context.player(), payload.enabled()));
+		// 専用サーバーで無効にしているときは受け口を作らず、クライアントに使えないことを伝える。
+		// シングルプレイは途中で切り替えられるので、受け口は作っておく
+		ServerPlayConnectionEvents.INIT.register((handler, server) -> {
+			if (active || !server.isDedicatedServer()) {
+				ServerPlayNetworking.registerReceiver(handler, TogglePayload.TYPE, (payload, context) -> setEnabled(context.player(), payload.enabled()));
+			}
+		});
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> DISABLED.remove(handler.player.getUUID()));
 
 		PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
-			if (felling || !(player instanceof ServerPlayer serverPlayer)) {
+			if (!active || felling || !(player instanceof ServerPlayer serverPlayer)) {
 				return;
 			}
 			if (DISABLED.contains(player.getUUID()) || !state.is(BlockTags.LOGS) || !player.getMainHandItem().is(ItemTags.AXES)) {

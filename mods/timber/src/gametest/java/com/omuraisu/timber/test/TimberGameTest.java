@@ -49,6 +49,22 @@ public class TimberGameTest {
 		helper.succeed();
 	}
 
+	// Jori で無効にされている間は、一括伐採を ON にしている人でも 1 つずつ
+	@GameTest
+	public void inactiveBreaksSingleLog(GameTestHelper helper) {
+		placeTrunk(helper);
+		helper.setBlock(new BlockPos(4, 6, 4), Blocks.OAK_LEAVES);
+		Timber.setActive(false);
+		try {
+			chop(helper, true, new ItemStack(Items.IRON_AXE));
+		} finally {
+			Timber.setActive(true);
+		}
+
+		assertOnlyFirstLogBroken(helper);
+		helper.succeed();
+	}
+
 	@GameTest
 	public void sneakingStillFells(GameTestHelper helper) {
 		placeTrunk(helper);

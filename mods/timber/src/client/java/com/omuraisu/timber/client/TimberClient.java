@@ -5,6 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.omuraisu.timber.Timber;
 import com.omuraisu.timber.TogglePayload;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -21,6 +22,8 @@ public class TimberClient implements ClientModInitializer {
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("timber.txt");
 
 	private static boolean enabled = true;
+	// サーバーに最後に伝えた値。Jori で無効にされたら、サーバーにも OFF と伝える
+	private static boolean sent;
 
 	@Override
 	public void onInitializeClient() {
@@ -34,6 +37,9 @@ public class TimberClient implements ClientModInitializer {
 
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
 			while (toggle.consumeClick()) {
+				if (!Timber.isActive()) {
+					continue;
+				}
 				enabled = !enabled;
 				save();
 				sync();
@@ -41,14 +47,22 @@ public class TimberClient implements ClientModInitializer {
 					client.player.sendOverlayMessage(Component.translatable(enabled ? "message.timber.enabled" : "message.timber.disabled"));
 				}
 			}
+			if (wanted() != sent) {
+				sync();
+			}
 		});
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> sync());
 	}
 
+	private static boolean wanted() {
+		return enabled && Timber.isActive();
+	}
+
 	private static void sync() {
+		sent = wanted();
 		if (ClientPlayNetworking.canSend(TogglePayload.TYPE)) {
-			ClientPlayNetworking.send(new TogglePayload(enabled));
+			ClientPlayNetworking.send(new TogglePayload(sent));
 		}
 	}
 
