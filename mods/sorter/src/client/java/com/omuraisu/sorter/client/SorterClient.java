@@ -1,6 +1,7 @@
 package com.omuraisu.sorter.client;
 
 import com.omuraisu.sorter.SortPayload;
+import com.omuraisu.sorter.Sorter;
 import com.omuraisu.sorter.client.mixin.AbstractContainerScreenAccessor;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -34,7 +35,7 @@ public class SorterClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ScreenEvents.AFTER_INIT.register((client, screen, width, height) -> {
-			if (!ClientPlayNetworking.canSend(SortPayload.TYPE)) {
+			if (!Sorter.isActive() || !ClientPlayNetworking.canSend(SortPayload.TYPE)) {
 				return;
 			}
 			if (screen instanceof ContainerScreen || screen instanceof ShulkerBoxScreen) {

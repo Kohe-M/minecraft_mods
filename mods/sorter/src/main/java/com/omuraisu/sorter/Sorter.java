@@ -5,6 +5,7 @@ import java.util.List;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
@@ -13,10 +14,31 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 public class Sorter implements ModInitializer {
+	// Jori の一覧で無効にされている間は false。ボタンを出さず、届いた依頼も無視する
+	private static volatile boolean active = true;
+
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		active = value;
+	}
+
 	@Override
 	public void onInitialize() {
 		PayloadTypeRegistry.serverboundPlay().register(SortPayload.TYPE, SortPayload.CODEC);
-		ServerPlayNetworking.registerGlobalReceiver(SortPayload.TYPE, (payload, context) -> sort(context.player(), payload.containerId(), payload.slot()));
+		// 専用サーバーで無効にしているときは受け口を作らず、クライアントにボタンを出させない。
+		// シングルプレイは途中で切り替えられるので、受け口は作っておいて届いた時点で確かめる
+		ServerPlayConnectionEvents.INIT.register((handler, server) -> {
+			if (active || !server.isDedicatedServer()) {
+				ServerPlayNetworking.registerReceiver(handler, SortPayload.TYPE, (payload, context) -> {
+					if (active) {
+						sort(context.player(), payload.containerId(), payload.slot());
+					}
+				});
+			}
+		});
 	}
 
 	public static void sort(ServerPlayer player, int containerId, int slotIndex) {

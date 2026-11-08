@@ -1,12 +1,23 @@
 package com.omuraisu.sorter.test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.ServerSocket;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Properties;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.omuraisu.sorter.SortPayload;
+import com.omuraisu.sorter.Sorter;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerConnection;
+import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.screen.v1.Screens;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.ImageButton;
@@ -94,6 +105,88 @@ public class SorterClientGameTest implements FabricClientGameTest {
 			// レシピ本を開くと画面が右にずれる
 			clickButton(context, false, 0);
 			context.takeScreenshot("sorter-inventory-recipe-book");
+
+			testInactive(context, singleplayer);
+		}
+
+		testDedicatedServer(context);
+	}
+
+	// Jori で無効にされている間はボタンを出さず、届いた依頼もサーバーが無視する。戻すと開き直した画面に出る
+	private static void testInactive(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		SimpleContainer chest = new SimpleContainer(27);
+		chest.setItem(1, new ItemStack(Items.DIAMOND, 2));
+		chest.setItem(5, new ItemStack(Items.DIRT, 3));
+
+		Sorter.setActive(false);
+		try {
+			openChest(context, singleplayer, chest);
+			assertSortButtons(context, 0);
+			context.runOnClient(client -> ClientPlayNetworking.send(new SortPayload(((ContainerScreen) client.gui.screen()).getMenu().containerId, 0)));
+			context.waitTicks(5);
+			singleplayer.getServer().runOnServer(server -> {
+				assertStack(chest.getItem(1), new ItemStack(Items.DIAMOND, 2));
+				assertStack(chest.getItem(5), new ItemStack(Items.DIRT, 3));
+			});
+		} finally {
+			Sorter.setActive(true);
+		}
+
+		openChest(context, singleplayer, chest);
+		assertSortButtons(context, 2);
+		context.setScreen(() -> null);
+	}
+
+	// 専用サーバーで無効にしていると受け口がなく、クライアントにボタンが出ない
+	private static void testDedicatedServer(ClientGameTestContext context) {
+		Properties properties = new Properties();
+		try {
+			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
+			Files.writeString(Path.of("eula.txt"), "eula=true\n");
+			// 普段のサーバーと重ならないよう空いているポートを使う
+			try (ServerSocket socket = new ServerSocket(0)) {
+				properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+
+		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties)) {
+			Sorter.setActive(false);
+			try (TestDedicatedServerConnection connection = server.connect()) {
+				connection.waitForChunksRender();
+				if (context.computeOnClient(client -> ClientPlayNetworking.canSend(SortPayload.TYPE))) {
+					throw new AssertionError("server should not accept sorting while inactive");
+				}
+			} finally {
+				Sorter.setActive(true);
+			}
+
+			try (TestDedicatedServerConnection connection = server.connect()) {
+				connection.waitForChunksRender();
+				context.runOnClient(client -> client.gui.setScreen(new InventoryScreen(client.player)));
+				context.waitTicks(2);
+				assertSortButtons(context, 1);
+				context.takeScreenshot("sorter-server-inventory");
+				context.setScreen(() -> null);
+			}
+		}
+	}
+
+	private static void openChest(ClientGameTestContext context, TestSingleplayerContext singleplayer, SimpleContainer chest) {
+		context.setScreen(() -> null);
+		singleplayer.getServer().runOnServer(server -> server.getPlayerList().getPlayers().getFirst().openMenu(
+				new SimpleMenuProvider((id, inv, p) -> ChestMenu.threeRows(id, inv, chest), Component.literal("Chest"))));
+		context.waitForScreen(ContainerScreen.class);
+		context.waitTicks(2);
+	}
+
+	private static void assertSortButtons(ClientGameTestContext context, int expected) {
+		long count = context.computeOnClient(client -> Screens.getWidgets(client.gui.screen()).stream()
+				.filter(widget -> widget instanceof ImageButton && widget.getMessage().getString().equals("Sort"))
+				.count());
+		if (count != expected) {
+			throw new AssertionError("expected " + expected + " sort buttons but found " + count);
 		}
 	}
 
