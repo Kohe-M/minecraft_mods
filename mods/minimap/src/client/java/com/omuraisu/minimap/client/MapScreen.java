@@ -18,7 +18,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 
 // 読み込まれている範囲の全画面マップ。ドラッグで移動、ホイールで拡大縮小、
-// 刺すキーでカーソルの位置にピンを刺し、Shift + 左クリックで抜き、右クリックで名前を変える。
+// 刺すキーでカーソルの位置にピンを刺し、Shift + 左クリックで抜き、右クリックで名前を変える。右下にカーソルの位置の座標を出す。
 // 位置を確かめようとして刺したり抜いたりしないよう、ただの左クリックには割り当てない。
 // ミニマップと同じく GUI スケールに左右されないよう、地図の上の位置は実ピクセルで扱う
 public class MapScreen extends Screen {
@@ -170,6 +170,16 @@ public class MapScreen extends Screen {
 		if (nameBox == null) {
 			hints(graphics);
 		}
+		cursorCoordinates(graphics);
+	}
+
+	// 刺すキーで刺さる位置と同じブロックを出すので、刺すときと同じくカーソルの位置は丸めずに読む
+	private void cursorCoordinates(GuiGraphicsExtractor graphics) {
+		Window window = minecraft.getWindow();
+		int guiScale = window.getGuiScale();
+		String text = MapIcons.coordinates(Mth.floor(worldX(minecraft.mouseHandler.getScaledXPos(window) * guiScale)),
+				Mth.floor(worldZ(minecraft.mouseHandler.getScaledYPos(window) * guiScale)));
+		MapIcons.labelAt(graphics, font, text, width - HINT_MARGIN - font.width(text), height - HINT_MARGIN - MapIcons.LABEL_HEIGHT);
 	}
 
 	// 刺すキーは割り当てを変えられるので、毎回いまのキーで作る
@@ -179,8 +189,7 @@ public class MapScreen extends Screen {
 				Component.translatable("gui.minimap.hint_remove"));
 		int top = height - HINT_MARGIN - hints.size() * MapIcons.LABEL_HEIGHT;
 		for (Component hint : hints) {
-			String text = hint.getString();
-			MapIcons.label(graphics, font, text, HINT_MARGIN + font.width(text) / 2, top);
+			MapIcons.labelAt(graphics, font, hint.getString(), HINT_MARGIN, top);
 			top += MapIcons.LABEL_HEIGHT;
 		}
 	}

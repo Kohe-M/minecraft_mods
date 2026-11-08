@@ -26,6 +26,10 @@ final class MinimapHud {
 	private static final int DEMO_EFFECTS_OFFSET = 15;
 	// 1 ブロックを単位にした余白
 	private static final int MARGIN = 8;
+	// 地図の下で座標を出す帯の高さ（1 ブロックを単位に、下の枠を含む）。文字も 1 ブロックを 1 画素として描く
+	private static final int COORDINATES_HEIGHT = 11;
+	private static final int COORDINATES_TOP = 2;
+	private static final int COORDINATES_COLOR = 0xFFFFFFFF;
 
 	// ミニマップが短辺の 3 割前後になる。地図がぼやけないよう 1 ブロックは整数ピクセルにする
 	static int pixelsPerBlock(int windowWidth, int windowHeight) {
@@ -54,7 +58,7 @@ final class MinimapHud {
 		graphics.pose().translate(window.getWidth() - size - MARGIN * unit,
 				MARGIN * unit + effectsHeight(client, player) * window.getGuiScale());
 
-		graphics.fill(-unit, -unit, size + unit, size + unit, FRAME_COLOR);
+		graphics.fill(-unit, -unit, size + unit, size + COORDINATES_HEIGHT * unit, FRAME_COLOR);
 		terrain(graphics, left, top, size, unit);
 		for (Pins.Pin pin : MinimapClient.PINS.in(player.level().dimension().identifier())) {
 			pin(graphics, pin, left, top, size, unit);
@@ -63,7 +67,18 @@ final class MinimapHud {
 			face(graphics, marker, left, top, size, unit);
 		}
 		MapIcons.arrow(graphics, size / 2f, size / 2f, player.getViewYRot(partialTick), unit);
+		coordinates(graphics, client, MapIcons.coordinates(Mth.floor(position.x), Mth.floor(position.y), Mth.floor(position.z)), size, unit);
 
+		graphics.pose().popMatrix();
+	}
+
+	// 地図と一緒に大きくなるよう、GUI スケールではなく 1 ブロックの大きさで拡大する。
+	// 文字の幅は最後の字の後の 1 画素の間隔を含むので、それを除いて真ん中に置く
+	private static void coordinates(GuiGraphicsExtractor graphics, Minecraft client, String text, int size, int unit) {
+		graphics.pose().pushMatrix();
+		graphics.pose().translate((size - (client.font.width(text) - 1) * unit) / 2, size + COORDINATES_TOP * unit);
+		graphics.pose().scale(unit);
+		graphics.text(client.font, text, 0, 0, COORDINATES_COLOR, false);
 		graphics.pose().popMatrix();
 	}
 

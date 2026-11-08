@@ -55,9 +55,24 @@ final class MapIcons {
 	// 地形の上でも読めるよう背景を敷く。座標は GUI 座標
 	static void label(GuiGraphicsExtractor graphics, Font font, String text, int centerX, int top) {
 		int width = font.width(text);
-		int left = Mth.clamp(centerX - width / 2, 2, Math.max(2, graphics.guiWidth() - width - 2));
-		graphics.fill(left - 2, top, left + width + 2, top + LABEL_HEIGHT - 1, LABEL_BACKGROUND);
+		labelAt(graphics, font, text, Mth.clamp(centerX - width / 2, 2, Math.max(2, graphics.guiWidth() - width - 2)), top);
+	}
+
+	static void labelAt(GuiGraphicsExtractor graphics, Font font, String text, int left, int top) {
+		graphics.fill(left - 2, top, left + font.width(text) + 2, top + LABEL_HEIGHT - 1, LABEL_BACKGROUND);
 		graphics.text(font, text, left, top + 1, LABEL_COLOR, false);
+	}
+
+	// ブロック座標。数で分かるので軸の名前は付けない
+	static String coordinates(int... values) {
+		StringBuilder text = new StringBuilder();
+		for (int value : values) {
+			if (!text.isEmpty()) {
+				text.append(", ");
+			}
+			text.append(value);
+		}
+		return text.toString();
 	}
 
 	private MapIcons() {

@@ -57,6 +57,7 @@ import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ARGB;
+import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
@@ -104,6 +105,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
 
 			testScale(context);
+			testCoordinates(context, singleplayer);
 			testTerrain(context, singleplayer);
 			testHidden(context);
 			testEffects(context, singleplayer);
@@ -289,6 +291,95 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.waitTicks(3);
 	}
 
+	// 地図の下に今いるブロックの座標が出る。文字も地図と一緒に大きくなり、GUI スケールの設定には左右されない
+	private static void testCoordinates(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		String here = PLAYER_X + ", " + FEET_Y + ", " + PLAYER_Z;
+		coordinates(context, "coordinates-480p", 854, 480, here);
+		int[][] fullHd = coordinates(context, "coordinates-1080p", 1920, 1080, here);
+
+		int guiScale = context.computeOnClient(client -> client.options.guiScale().get());
+		for (int scale : new int[] {1, 2, 4}) {
+			setGuiScale(context, scale);
+			int[][] scaled = coordinates(context, "coordinates-1080p-gui" + scale, 1920, 1080, here);
+			if (!Arrays.deepEquals(scaled, fullHd)) {
+				throw new AssertionError("gui scale " + scale + " changed the coordinates under the map");
+			}
+		}
+		setGuiScale(context, guiScale);
+
+		// 1 ブロック動くと変わる。負の座標はマップ画面で確かめる（遠くへ行くと、遠くの地形のテストが使うチャンクを生成してしまう）
+		teleport(context, singleplayer, PLAYER_X + 1, PLAYER_Z);
+		int[][] moved = coordinates(context, "coordinates-moved", 1920, 1080, (PLAYER_X + 1) + ", " + FEET_Y + ", " + PLAYER_Z);
+		if (Arrays.deepEquals(moved, fullHd)) {
+			throw new AssertionError("coordinates under the map should change when the player moves");
+		}
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+
+		context.getInput().resizeWindow(854, 480);
+		context.waitTicks(3);
+	}
+
+	// 地図の下の帯の画素を返す。文字は真っ白で、帯の真ん中にそろう
+	private static int[][] coordinates(ClientGameTestContext context, String name, int width, int height, String expected) {
+		context.getInput().resizeWindow(width, height);
+		context.waitTicks(3);
+		int textWidth = context.computeOnClient(client -> client.font.width(expected));
+		return Screenshots.read(context.takeScreenshot(name), image -> {
+			Frame frame = findFrame(image);
+			if (frame == null) {
+				throw new AssertionError(name + ": map frame not found");
+			}
+			int unit = frame.size() / 162;
+			int mapLeft = frame.x() + unit;
+			int mapBottom = frame.y() + unit + 160 * unit;
+			int barBottom = mapBottom + 11 * unit;
+			assertEquals(name + ": bar left corner", FRAME_COLOR, image.getPixel(frame.x(), barBottom - 1));
+			assertEquals(name + ": bar right corner", FRAME_COLOR, image.getPixel(frame.x() + frame.size() - 1, barBottom - 1));
+
+			int[] text = whiteExtent(image, frame.x(), frame.x() + frame.size(), mapBottom, barBottom);
+			if (text == null) {
+				throw new AssertionError(name + ": coordinates should be drawn under the map");
+			}
+			// 最後の字の後の 1 画素の間隔は描かれない
+			int visible = (textWidth - 1) * unit;
+			assertEquals(name + ": coordinates left", mapLeft + (160 * unit - visible) / 2, text[0]);
+			assertEquals(name + ": coordinates right", mapLeft + (160 * unit - visible) / 2 + visible - 1, text[1]);
+			if (text[2] < mapBottom + unit || text[3] >= barBottom - unit) {
+				throw new AssertionError(name + ": coordinates should be inside the bar but rows were " + text[2] + " to " + text[3]
+						+ " for the bar " + mapBottom + " to " + barBottom);
+			}
+
+			int[][] pixels = new int[barBottom - mapBottom][frame.size()];
+			for (int y = 0; y < pixels.length; y++) {
+				for (int x = 0; x < frame.size(); x++) {
+					pixels[y][x] = image.getPixel(frame.x() + x, mapBottom + y);
+				}
+			}
+			return pixels;
+		});
+	}
+
+	// 真っ白な画素が並ぶ範囲。{左, 右, 上, 下}（どれも含む）。なければ null
+	private static int[] whiteExtent(NativeImage image, int left, int right, int top, int bottom) {
+		int[] extent = null;
+		for (int y = top; y < Math.min(bottom, image.getHeight()); y++) {
+			for (int x = left; x < Math.min(right, image.getWidth()); x++) {
+				if (image.getPixel(x, y) != 0xFFFFFFFF) {
+					continue;
+				}
+				if (extent == null) {
+					extent = new int[] {x, x, y, y};
+				} else {
+					extent[0] = Math.min(extent[0], x);
+					extent[1] = Math.max(extent[1], x);
+					extent[2] = Math.min(extent[2], y);
+					extent[3] = Math.max(extent[3], y);
+				}
+			}
+		}
+		return extent;
+	}
+
 	private static void testTerrain(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		context.waitTicks(MAP_REFRESH_TICKS);
 		for (int[] window : new int[][] {{854, 480}, {1920, 1080}, {3840, 2160}}) {
@@ -462,8 +553,19 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		// 刺す・抜く操作が左下に出る。名前の入力中は隠れる
 		assertHints(context, "map-hints", true);
 
-		// 何もないところの左クリックでは刺さらない
+		// 右下にカーソルの位置のブロックの座標が出る
 		Pins.Pin clicked = new Pins.Pin(OVERWORLD, playerX + 20, playerZ - 10);
+		int[][] cursor = assertCursorCoordinates(context, "map-cursor", view.x(clicked.x()), view.y(clicked.z()), clicked);
+		// 同じ桁数なので幅では分からない。1 ブロックずらすと文字が変わる
+		int[][] west = assertCursorCoordinates(context, "map-cursor-west", view.x(clicked.x() - 1), view.y(clicked.z()),
+				new Pins.Pin(OVERWORLD, clicked.x() - 1, clicked.z()));
+		int[][] north = assertCursorCoordinates(context, "map-cursor-north", view.x(clicked.x()), view.y(clicked.z() - 1),
+				new Pins.Pin(OVERWORLD, clicked.x(), clicked.z() - 1));
+		if (Arrays.deepEquals(cursor, west) || Arrays.deepEquals(cursor, north)) {
+			throw new AssertionError("cursor coordinates should change when the cursor moves to another block");
+		}
+
+		// 何もないところの左クリックでは刺さらない
 		click(context, view.x(clicked.x()), view.y(clicked.z()));
 		assertPins(OVERWORLD, first);
 		assertNotEditing(context);
@@ -561,8 +663,13 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertScale(context, 0.25);
 		moveCursorAway(context);
 
-		// 描画距離の外にも刺せる
+		// 負の座標は切り捨てる
+		assertCursorCoordinates(context, "map-cursor-negative", 1, 1, new Pins.Pin(OVERWORLD,
+				Mth.floor(playerX + 0.5 + (1 - 427) / 0.25), Mth.floor(playerZ + 0.5 + (1 - 240) / 0.25)));
+
+		// 描画距離の外にも刺せる。刺す前に出ていた座標に刺さる
 		Pins.Pin far = new Pins.Pin(OVERWORLD, playerX + 1600, playerZ);
+		assertCursorCoordinates(context, "map-cursor-far", 427 + 400, 240, far);
 		placeAt(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first, far);
 		confirmName(context);
@@ -585,6 +692,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			ScreenView large = new ScreenView(1920, 1080, 4, playerX, playerZ);
 			large.assertBlock(context, "map-1080p-gui" + scale, SEAM, SEAM, MapColor.FIRE);
 			Pins.Pin scaled = new Pins.Pin(OVERWORLD, playerX + 30, playerZ + 12);
+			assertCursorCoordinates(context, "map-cursor-1080p-gui" + scale, large.x(scaled.x()), large.y(scaled.z()), scaled);
 			placeAt(context, large.x(scaled.x()), large.y(scaled.z()));
 			assertPins(OVERWORLD, first, scaled);
 			confirmName(context);
@@ -1346,6 +1454,41 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				}
 			}
 			return null;
+		});
+	}
+
+	// 右下の座標の文字を読み、背景の画素を返す。文字は真っ白で GUI スケールで描かれ、画面の端から 4 離れる。
+	// 地形に雪の白が出ることがあるので、背景の中だけを読む。幅で何の文字かを確かめる
+	private static int[][] assertCursorCoordinates(ClientGameTestContext context, String name, int x, int y, Pins.Pin block) {
+		context.getInput().setCursorPos(x, y);
+		context.waitTick();
+		String expected = block.x() + ", " + block.z();
+		int[] gui = context.computeOnClient(client -> new int[] {
+				client.getWindow().getGuiScale(), client.getWindow().getGuiScaledWidth(), client.getWindow().getGuiScaledHeight(),
+				client.font.width(expected)});
+		int guiScale = gui[0];
+		int textLeft = gui[1] - 4 - gui[3];
+		int labelTop = gui[2] - 4 - 11;
+		return Screenshots.read(context.takeScreenshot(name), image -> {
+			int left = (textLeft - 2) * guiScale;
+			int right = (gui[1] - 2) * guiScale;
+			int top = labelTop * guiScale;
+			int bottom = (labelTop + 10) * guiScale;
+			int[] text = whiteExtent(image, left, right, top, bottom);
+			if (text == null) {
+				throw new AssertionError(name + ": cursor coordinates " + expected + " should be shown at the bottom right");
+			}
+			// 最後の字の後の 1 画素の間隔は描かれない
+			assertEquals(name + ": left of " + expected, textLeft * guiScale, text[0]);
+			assertEquals(name + ": right of " + expected, (gui[1] - 5) * guiScale - 1, text[1]);
+
+			int[][] pixels = new int[bottom - top][right - left];
+			for (int row = 0; row < pixels.length; row++) {
+				for (int column = 0; column < pixels[row].length; column++) {
+					pixels[row][column] = image.getPixel(left + column, top + row);
+				}
+			}
+			return pixels;
 		});
 	}
 
