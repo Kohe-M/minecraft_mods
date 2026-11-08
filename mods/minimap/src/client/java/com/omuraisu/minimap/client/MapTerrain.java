@@ -9,30 +9,27 @@ import com.mojang.renderpearl.api.textures.FilterMode;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
+import com.omuraisu.minimap.TerrainColors;
+
 import net.minecraft.client.renderer.texture.DynamicTexture;
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
-import net.minecraft.util.ARGB;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
-import net.minecraft.world.level.levelgen.Heightmap;
-import net.minecraft.world.level.material.MapColor;
 
 // プレイヤーの周囲 size 四方の地形を 1 ブロック 1 テクセルで持つテクスチャ。
 // 列 (x, z) はワールド座標の剰余の位置に固定し、歩いても新しく見える列だけ描けばよいようにする
 final class MapTerrain {
 	static final int EMPTY_COLOR = 0xFF1A1E26;
 
-	private static final int MAX_WATER_DEPTH = 16;
-
 	final Identifier texture;
 	final int size;
 
+	// 読み込まれていない列の色。マップ画面では透明にして、下に描いた遠くの地形を見せる
+	private final int emptyColor;
 	// 動かなくても 2 秒で一巡して、ブロックの変化や読み込まれたチャンクを反映する
 	private final int refreshPerTick;
 	private final int[] slotX;
 	private final int[] slotZ;
-	private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
 
 	private DynamicTexture dynamicTexture;
 	private ClientLevel level;
@@ -41,9 +38,10 @@ final class MapTerrain {
 	private int cursor;
 	private boolean dirty;
 
-	MapTerrain(String name, int size) {
+	MapTerrain(String name, int size, int emptyColor) {
 		this.texture = Identifier.fromNamespaceAndPath("minimap", name);
 		this.size = size;
+		this.emptyColor = emptyColor;
 		this.refreshPerTick = size * size / 40;
 		this.slotX = new int[size * size];
 		this.slotZ = new int[size * size];
@@ -140,55 +138,24 @@ final class MapTerrain {
 
 	private int color(int x, int z, int feetY) {
 		if (!isLoaded(x, z)) {
-			return EMPTY_COLOR;
+			return emptyColor;
 		}
-
-		int y = surfaceY(x, z, feetY);
-		BlockState state = null;
-		MapColor color = MapColor.NONE;
-		for (; y >= level.getMinY() && color == MapColor.NONE; y--) {
-			state = level.getBlockState(pos.set(x, y, z));
-			color = state.getMapColor(level, pos);
-		}
-		if (color == MapColor.NONE) {
-			return EMPTY_COLOR;
-		}
-		y++;
-
-		MapColor.Brightness brightness = state.getFluidState().isEmpty()
-				? slopeBrightness(y, x, z, feetY)
-				: depthBrightness(x, y, z);
-		return ARGB.opaque(color.calculateARGBColor(brightness));
+		boolean ceiling = level.dimensionType().hasCeiling();
+		LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+		int y = TerrainColors.surfaceY(chunk, x, z, ceiling, feetY);
+		int northY = isLoaded(x, z - 1)
+				? TerrainColors.surfaceY(level.getChunk(x >> 4, (z - 1) >> 4), x, z - 1, ceiling, feetY)
+				: TerrainColors.UNKNOWN_Y;
+		int packed = TerrainColors.packedColor(chunk, x, z, y, northY);
+		return packed == 0 ? emptyColor : TerrainColors.argb(packed);
 	}
 
-	// 北より高いと明るく、低いと暗くして起伏を見せる
-	private MapColor.Brightness slopeBrightness(int y, int x, int z, int feetY) {
-		int north = isLoaded(x, z - 1) ? surfaceY(x, z - 1, feetY) : y;
-		return y > north ? MapColor.Brightness.HIGH : y < north ? MapColor.Brightness.LOW : MapColor.Brightness.NORMAL;
-	}
-
-	private MapColor.Brightness depthBrightness(int x, int y, int z) {
-		int depth = 1;
-		while (depth < MAX_WATER_DEPTH && !level.getFluidState(pos.set(x, y - depth, z)).isEmpty()) {
-			depth++;
-		}
-		return depth <= 3 ? MapColor.Brightness.HIGH : depth <= 8 ? MapColor.Brightness.NORMAL : MapColor.Brightness.LOW;
+	private boolean isLoaded(int x, int z) {
+		return isLoaded(level, x >> 4, z >> 4);
 	}
 
 	// ClientLevel.hasChunk は常に true を返すので、チャンクを直接見る
-	private boolean isLoaded(int x, int z) {
-		return level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false) != null;
-	}
-
-	private int surfaceY(int x, int z, int feetY) {
-		if (!level.dimensionType().hasCeiling()) {
-			return level.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
-		}
-		// ネザーの天井を映さないよう、足元の高さから下を見る
-		int y = Math.min(feetY + 2, level.getMaxY());
-		while (y > level.getMinY() && level.getBlockState(pos.set(x, y, z)).isAir()) {
-			y--;
-		}
-		return y;
+	static boolean isLoaded(ClientLevel level, int chunkX, int chunkZ) {
+		return level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) != null;
 	}
 }

@@ -59,9 +59,10 @@ public class MapScreen extends Screen {
 			Vec3 position = minecraft.player.position();
 			centerX = position.x;
 			centerZ = position.z;
-			// クライアントが持ち得るチャンクがすべて入る大きさ
-			terrain = new MapTerrain("terrain_large", (minecraft.options.getEffectiveRenderDistance() + 1) * 2 * 16);
+			// クライアントが持ち得るチャンクがすべて入る大きさ。外は遠くの地形（FarTerrain）に任せる
+			terrain = new MapTerrain("terrain_large", (minecraft.options.getEffectiveRenderDistance() + 1) * 2 * 16, 0);
 			terrain.tick(minecraft);
+			MinimapClient.FAR_TERRAIN.open(minecraft.level.dimension().identifier(), minecraft.player.chunkPosition());
 		}
 		// ウィンドウの大きさが変わると作り直されるので、入力中の文字を引き継ぐ
 		if (editing != null) {
@@ -74,6 +75,13 @@ public class MapScreen extends Screen {
 		if (terrain != null) {
 			terrain.tick(minecraft);
 		}
+		if (terrain != null && minecraft.player != null && minecraft.level != null) {
+			Window window = minecraft.getWindow();
+			MinimapClient.FAR_TERRAIN.tick(minecraft, minecraft.level.dimension().identifier(), minecraft.player.chunkPosition(), scale(),
+					Mth.floor(worldX(0)) >> 4, Mth.floor(worldZ(0)) >> 4,
+					Mth.floor(worldX(window.getWidth())) >> 4, Mth.floor(worldZ(window.getHeight())) >> 4,
+					Mth.floor(centerX) >> 4, Mth.floor(centerZ) >> 4);
+		}
 	}
 
 	@Override
@@ -85,6 +93,7 @@ public class MapScreen extends Screen {
 			terrain.release(minecraft);
 			terrain = null;
 		}
+		MinimapClient.FAR_TERRAIN.close(minecraft);
 	}
 
 	@Override
@@ -119,6 +128,7 @@ public class MapScreen extends Screen {
 		graphics.pose().pushMatrix();
 		graphics.pose().scale(1f / guiScale);
 
+		farTerrain(graphics);
 		terrain(graphics);
 
 		Pins.Pin hovered = nameBox != null ? null : pinAt(mouseX * guiScale, mouseY * guiScale);
@@ -198,6 +208,20 @@ public class MapScreen extends Screen {
 			positionNameBox();
 		}
 		super.extractRenderState(graphics, mouseX, mouseY, delta);
+	}
+
+	// 隣どうしで端の位置を同じ式で丸めて、すき間が出ないようにする
+	private void farTerrain(GuiGraphicsExtractor graphics) {
+		Window window = minecraft.getWindow();
+		MinimapClient.FAR_TERRAIN.forEachRegion((texture, minX, minZ, size) -> {
+			int left = (int) Math.round(screenX(minX));
+			int top = (int) Math.round(screenY(minZ));
+			int right = (int) Math.round(screenX(minX + size));
+			int bottom = (int) Math.round(screenY(minZ + size));
+			if (left < right && top < bottom && right > 0 && bottom > 0 && left < window.getWidth() && top < window.getHeight()) {
+				graphics.blit(texture, left, top, right, bottom, 0, 1, 0, 1);
+			}
+		});
 	}
 
 	// 地形があるところだけに重ね、外は背景の色のままにする

@@ -17,7 +17,7 @@ final class MinimapHud {
 	// 表示は直前の tick から補間するので、速く動いても見えている範囲を描き終えているよう広めに持つ
 	private static final int TERRAIN_SIZE = VIEW + 16;
 
-	static final MapTerrain TERRAIN = new MapTerrain("terrain", TERRAIN_SIZE);
+	static final MapTerrain TERRAIN = new MapTerrain("terrain", TERRAIN_SIZE, MapTerrain.EMPTY_COLOR);
 
 	private static final int FRAME_COLOR = 0xFF0B0D12;
 	private static final int BENEFICIAL_EFFECTS_HEIGHT = 25;

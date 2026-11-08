@@ -7,6 +7,7 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
@@ -18,11 +19,14 @@ import java.util.stream.Stream;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.omuraisu.minimap.TerrainRequest;
+import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.client.MapScreen;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.client.Pins;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerConnection;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
@@ -32,6 +36,7 @@ import net.fabricmc.fabric.api.entity.FakePlayer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
 import net.minecraft.client.CloudStatus;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
@@ -45,8 +50,10 @@ import net.minecraft.util.ARGB;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.material.MapColor;
@@ -82,6 +89,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testPins(context, singleplayer);
 			testMapScreen(context, singleplayer);
 			testPinNames(context, singleplayer, save);
+			testFarTerrain(context, singleplayer);
 			testBeams(context, singleplayer);
 			testOtherPlayers(context, singleplayer);
 			testNether(context, singleplayer);
@@ -442,8 +450,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertScale(context, 0.25);
 		moveCursorAway(context);
 
-		// 読み込まれていない遠くにも刺せて、地形がないところは背景の色になる
-		assertPixel(context, "map-far-background", 20, 20, EMPTY_COLOR);
+		// 描画距離の外にも刺せる
 		Pins.Pin far = new Pins.Pin(OVERWORLD, playerX + 1600, playerZ);
 		placeAt(context, 427 + 400, 240);
 		assertPins(OVERWORLD, first, far);
@@ -567,6 +574,138 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 		toggleMap(context);
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+	}
+
+	// 描画距離の外も、サーバーに読み込ませて（なければ生成させて）マップ画面に出す
+	private static void testFarTerrain(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+		int renderDistance = context.computeOnClient(client -> client.options.getEffectiveRenderDistance());
+		ChunkPos home = new ChunkPos(PLAYER_X >> 4, PLAYER_Z >> 4);
+		// 目印を置いたチャンクと、何もないチャンク。どちらもクライアントは持っていない
+		ChunkPos marked = new ChunkPos(home.x() + renderDistance + 8, home.z());
+		ChunkPos plain = new ChunkPos(home.x() - renderDistance - 12, home.z() + 6);
+		// 手元の地形のテクスチャの角。読み込まれていないので透明になり、下の遠くの地形が見える
+		ChunkPos corner = new ChunkPos(home.x() + renderDistance + 1, home.z() + renderDistance);
+		singleplayer.getServer().runOnServer(server -> fill(server.overworld(),
+				new BlockPos(marked.getMinBlockX(), FLOOR_Y, marked.getMinBlockZ()),
+				new BlockPos(marked.getMaxBlockX(), FLOOR_Y, marked.getMaxBlockZ()), Blocks.GOLD_BLOCK));
+
+		// 前に地図を開いたときの色が残っていても、近づいて読み込めば捨て、離れてから開くと今の色で描く
+		teleport(context, singleplayer, marked.getMiddleBlockX(), marked.getMiddleBlockZ());
+		context.waitFor(client -> clientHasChunk(client, marked));
+		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, marked.x(), marked.z())) != null) {
+			throw new AssertionError("chunks loaded by the client should be forgotten");
+		}
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+		context.waitFor(client -> !clientHasChunk(client, marked));
+		for (ChunkPos chunk : List.of(marked, plain, corner)) {
+			if (context.computeOnClient(client -> clientHasChunk(client, chunk))) {
+				throw new AssertionError("far chunk " + chunk + " should be outside the render distance " + renderDistance);
+			}
+		}
+
+		toggleMap(context);
+		zoomAtCenter(context, -3);
+		assertScale(context, 0.25);
+		ScreenView view = new ScreenView(854, 480, 0.25, PLAYER_X + 0.5, PLAYER_Z + 0.5);
+		waitForFarTerrain(context, marked, plain, corner);
+		view.assertBlock(context, "far-terrain-marked", marked.getMiddleBlockX(), marked.getMiddleBlockZ(), MapColor.GOLD);
+		view.assertBlock(context, "far-terrain-plain", plain.getMiddleBlockX(), plain.getMiddleBlockZ(), MapColor.GRASS);
+		view.assertBlock(context, "far-terrain-corner", corner.getMiddleBlockX(), corner.getMiddleBlockZ(), MapColor.GRASS);
+
+		// 手元のテクスチャとのつなぎ目にすき間がない
+		int live = (renderDistance + 1) * 16;
+		List<ChunkPos> around = new ArrayList<>();
+		for (int x = (PLAYER_X - live - 16) >> 4; x <= (PLAYER_X + live + 16) >> 4; x++) {
+			for (int z = (PLAYER_Z - live - 16) >> 4; z <= (PLAYER_Z + live + 16) >> 4; z++) {
+				around.add(new ChunkPos(x, z));
+			}
+		}
+		waitForFarTerrain(context, around.toArray(ChunkPos[]::new));
+		int left = view.x(PLAYER_X - live) - 3;
+		int right = view.x(PLAYER_X + live) + 3;
+		int top = view.y(PLAYER_Z - live) - 3;
+		int bottom = view.y(PLAYER_Z + live) + 3;
+		int gaps = readImage(context.takeScreenshot("far-terrain-seam"), image -> {
+			int count = 0;
+			for (int y = top; y <= bottom; y++) {
+				for (int x = left; x <= right; x++) {
+					if (image.getPixel(x, y) == EMPTY_COLOR) {
+						count++;
+					}
+				}
+			}
+			return count;
+		});
+		if (gaps != 0) {
+			throw new AssertionError("far terrain should fill around the loaded terrain but " + gaps + " pixels were empty");
+		}
+
+		// 開き直すと、覚えている色からすぐ描く
+		int received = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.received());
+		toggleMap(context);
+		toggleMap(context);
+		moveCursorAway(context);
+		context.waitTicks(15);
+		view.assertBlock(context, "far-terrain-reopened", marked.getMiddleBlockX(), marked.getMiddleBlockZ(), MapColor.GOLD);
+		byte[] markedColors = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, marked.x(), marked.z()));
+		if (markedColors == null) {
+			throw new AssertionError("marked chunk should stay remembered after reopening the map");
+		}
+		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.received()) < received) {
+			throw new AssertionError("received count should not go back");
+		}
+
+		// 読み込める範囲の外は背景のまま。範囲の端に近いところから読み込む
+		context.getInput().setCursorPos(840, 240);
+		context.waitTick();
+		context.getInput().holdMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		context.getInput().setCursorPos(40, 240);
+		context.waitTick();
+		context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTick();
+		moveCursorAway(context);
+		ScreenView panned = view.panned(-800, 0);
+		ChunkPos edge = new ChunkPos(home.x() + TerrainServer.RADIUS - 24, home.z());
+		ChunkPos outside = new ChunkPos(home.x() + TerrainServer.RADIUS + 40, home.z());
+		waitForFarTerrain(context, edge);
+		panned.assertBlock(context, "far-terrain-edge", edge.getMiddleBlockX(), edge.getMiddleBlockZ(), MapColor.GRASS);
+		assertPixel(context, "far-terrain-outside", panned.x(outside.getMiddleBlockX()), panned.y(outside.getMiddleBlockZ()), EMPTY_COLOR);
+		toggleMap(context);
+
+		// 範囲の外を直接頼んでも読み込まない
+		ChunkPos beyond = new ChunkPos(home.x() + TerrainServer.RADIUS + 5, home.z());
+		context.runOnClient(client -> ClientPlayNetworking.send(new TerrainRequest(List.of(beyond.pack()))));
+		context.waitTicks(40);
+		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, beyond.x(), beyond.z())) != null) {
+			throw new AssertionError("chunks beyond the radius should not be sent");
+		}
+
+		toggleMap(context);
+		zoomAtCenter(context, 3);
+		assertScale(context, 2);
+		toggleMap(context);
+	}
+
+	// ClientLevel.hasChunk は常に true を返す
+	private static boolean clientHasChunk(Minecraft client, ChunkPos chunk) {
+		return client.level.getChunkSource().getChunk(chunk.x(), chunk.z(), ChunkStatus.FULL, false) != null;
+	}
+
+	// カーソルを真ん中に置いて回すと、地図の中心が動かない
+	private static void zoomAtCenter(ClientGameTestContext context, int steps) {
+		context.getInput().setCursorPos(427, 240);
+		context.waitTick();
+		scroll(context, steps);
+		moveCursorAway(context);
+	}
+
+	// 生成を待つ。テクスチャは届いた次の tick までに描かれる
+	private static void waitForFarTerrain(ClientGameTestContext context, ChunkPos... chunks) {
+		context.waitFor(client -> Arrays.stream(chunks)
+				.allMatch(chunk -> MinimapClient.FAR_TERRAIN.colors(client.level.dimension().identifier(), chunk.x(), chunk.z()) != null), 2400);
+		context.waitTicks(15);
 	}
 
 	private static void confirmName(ClientGameTestContext context) {
@@ -880,6 +1019,19 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				confirmName(context);
 				assertPins(OVERWORLD, pin, named);
 				context.takeScreenshot("server-map");
+
+				// サーバーにも入っていれば、描画距離の外も出る
+				int renderDistance = context.computeOnClient(client -> client.options.getEffectiveRenderDistance());
+				ChunkPos far = new ChunkPos((feet[0] >> 4) + renderDistance + 8, feet[1] >> 4);
+				zoomAtCenter(context, -3);
+				waitForFarTerrain(context, far);
+				ScreenView farView = new ScreenView(854, 480, 0.25, feet[0] + 0.5, feet[1] + 0.5);
+				int farPixel = readImage(context.takeScreenshot("server-far-terrain"),
+						image -> image.getPixel(farView.x(far.getMiddleBlockX()), farView.y(far.getMiddleBlockZ())));
+				if (farPixel == EMPTY_COLOR) {
+					throw new AssertionError("far terrain from the dedicated server should be drawn");
+				}
+				zoomAtCenter(context, 3);
 				toggleMap(context);
 				assertFileEquals(file, "minecraft:overworld " + pin.x() + " " + pin.z() + "\n"
 						+ "minecraft:overworld " + named.x() + " " + named.z() + " Camp\n");

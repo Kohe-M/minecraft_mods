@@ -9,8 +9,11 @@
 	],
 	"license": "CC0-1.0",
 	"icon": "assets/minimap/icon.png",
-	"environment": "client",
+	"environment": "*",
 	"entrypoints": {
+		"main": [
+			"com.omuraisu.minimap.Minimap"
+		],
 		"client": [
 			"com.omuraisu.minimap.client.MinimapClient"
 		]

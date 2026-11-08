@@ -4,10 +4,14 @@ import java.nio.file.Path;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
+import com.omuraisu.minimap.TerrainTile;
+
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
@@ -18,6 +22,7 @@ import net.minecraft.world.level.storage.LevelResource;
 
 public class MinimapClient implements ClientModInitializer {
 	public static final Pins PINS = new Pins();
+	public static final FarTerrain FAR_TERRAIN = new FarTerrain();
 
 	public static KeyMapping mapKey;
 	// マップ画面の中でだけ効く
@@ -35,8 +40,17 @@ public class MinimapClient implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "pin_labels"), PinBeams::extractLabels);
 		LevelRenderEvents.COLLECT_SUBMITS.register(PinBeams::submit);
 
-		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> PINS.open(pinFile(client)));
-		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> PINS.close());
+		ClientPlayNetworking.registerGlobalReceiver(TerrainTile.TYPE, (payload, context) -> FAR_TERRAIN.receive(payload));
+		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> FAR_TERRAIN.forget(level.dimension().identifier(), chunk.getPos()));
+
+		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+			PINS.open(pinFile(client));
+			FAR_TERRAIN.clear();
+		});
+		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
+			PINS.close();
+			FAR_TERRAIN.clear();
+		});
 		ClientTickEvents.END_CLIENT_TICK.register(MinimapClient::tick);
 	}
 
