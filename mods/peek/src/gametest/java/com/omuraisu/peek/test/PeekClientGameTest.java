@@ -11,6 +11,7 @@ import java.util.Properties;
 import java.util.function.Predicate;
 
 import com.omuraisu.peek.client.ClientShulkerPreview;
+import com.omuraisu.peek.client.PeekClient;
 import com.omuraisu.peek.client.ShulkerPreview;
 import com.omuraisu.peek.test.mixin.AbstractContainerScreenAccessor;
 
@@ -62,6 +63,7 @@ public class PeekClientGameTest implements FabricClientGameTest {
 			hidesEmptyBox(scene);
 			hidesWhenTooltipHidesContents(scene);
 			keepsVanillaLinesForOtherContainers(scene);
+			keepsVanillaWhenInactive(scene);
 		}
 
 		testDedicatedServer(context);
@@ -158,6 +160,22 @@ public class PeekClientGameTest implements FabricClientGameTest {
 	}
 
 	// シュルカーボックス以外の入れ物はバニラのまま
+	// Jori で無効にされている間は、シュルカーボックスもバニラの文字の行のまま
+	private static void keepsVanillaWhenInactive(Scene scene) {
+		scene.give(MAIN, box(Items.SHULKER_BOX, slots(at(0, Items.DIAMOND, 64), at(1, Items.EMERALD, 5))));
+		scene.context.runOnClient(client -> PeekClient.setActive(false));
+		try {
+			scene.openInventory();
+			List<ClientTooltipComponent> tooltip = scene.hover(inventorySlot(MAIN));
+			scene.context.takeScreenshot("peek-inactive");
+			assertNoPreview(tooltip);
+			assertEquals("content lines while inactive", 2, contentLines(scene, MAIN));
+			scene.close();
+		} finally {
+			scene.context.runOnClient(client -> PeekClient.setActive(true));
+		}
+	}
+
 	private static void keepsVanillaLinesForOtherContainers(Scene scene) {
 		scene.give(MAIN, box(Items.CHEST, slots(at(0, Items.DIAMOND, 64), at(1, Items.EMERALD, 5))));
 		scene.openInventory();

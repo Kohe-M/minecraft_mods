@@ -18,7 +18,7 @@ public record ShulkerPreview(List<ItemStack> slots) implements TooltipComponent 
 
 	// 中身が空のときと、ツールチップで中身を隠しているときは出さない
 	public static boolean shows(ItemStack stack) {
-		return stack.getItem() instanceof BlockItem item && item.getBlock() instanceof ShulkerBoxBlock
+		return PeekClient.isActive() && stack.getItem() instanceof BlockItem item && item.getBlock() instanceof ShulkerBoxBlock
 				&& stack.getOrDefault(DataComponents.TOOLTIP_DISPLAY, TooltipDisplay.DEFAULT).shows(DataComponents.CONTAINER)
 				&& stack.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY).nonEmptyItems().iterator().hasNext();
 	}
