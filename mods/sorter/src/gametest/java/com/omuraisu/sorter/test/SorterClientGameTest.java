@@ -1,16 +1,11 @@
 package com.omuraisu.sorter.test;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.ServerSocket;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Properties;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.omuraisu.sorter.SortPayload;
 import com.omuraisu.sorter.Sorter;
+import com.omuraisu.testkit.TestServers;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -139,19 +134,7 @@ public class SorterClientGameTest implements FabricClientGameTest {
 
 	// 専用サーバーで無効にしていると受け口がなく、クライアントにボタンが出ない
 	private static void testDedicatedServer(ClientGameTestContext context) {
-		Properties properties = new Properties();
-		try {
-			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
-			Files.writeString(Path.of("eula.txt"), "eula=true\n");
-			// 普段のサーバーと重ならないよう空いているポートを使う
-			try (ServerSocket socket = new ServerSocket(0)) {
-				properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
-			}
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
-
-		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties)) {
+		try (TestDedicatedServerContext server = TestServers.create(context)) {
 			Sorter.setActive(false);
 			try (TestDedicatedServerConnection connection = server.connect()) {
 				connection.waitForChunksRender();
