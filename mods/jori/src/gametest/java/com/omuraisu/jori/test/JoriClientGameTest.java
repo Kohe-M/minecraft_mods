@@ -1,15 +1,13 @@
 package com.omuraisu.jori.test;
 
+import static com.omuraisu.testkit.Asserts.assertEquals;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.ServerSocket;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
-import java.util.Properties;
 import java.util.function.Supplier;
 
-import com.mojang.blaze3d.platform.InputConstants;
 import com.omuraisu.fullbright.client.FullbrightClient;
 import com.omuraisu.jori.Feature;
 import com.omuraisu.jori.JoriConfig;
@@ -19,6 +17,8 @@ import com.omuraisu.minimap.TerrainRequest;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.peek.client.ShulkerPreview;
 import com.omuraisu.sorter.SortPayload;
+import com.omuraisu.testkit.TestServers;
+import com.omuraisu.testkit.Widgets;
 import com.omuraisu.timber.TogglePayload;
 import com.omuraisu.zoom.client.ZoomClient;
 
@@ -54,7 +54,7 @@ public class JoriClientGameTest implements FabricClientGameTest {
 		openFrom(context, TitleScreen::new, "jori-title");
 		context.takeScreenshot("jori-screen-title");
 		assertEquals("tiles", JoriClient.FEATURES.size(), tiles(context).size());
-		click(context, "Done");
+		Widgets.click(context, "Done");
 		assertScreen(context, TitleScreen.class);
 
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
@@ -71,13 +71,13 @@ public class JoriClientGameTest implements FabricClientGameTest {
 	private static void testToggle(ClientGameTestContext context) {
 		openFrom(context, () -> new PauseScreen(true), "jori-pause");
 		for (Feature feature : JoriClient.FEATURES) {
-			click(context, name(feature));
+			Widgets.click(context, name(feature));
 			if (feature.isActive()) {
 				throw new AssertionError(feature.id() + " should be inactive after the click");
 			}
 		}
 		assertConfig(false);
-		hover(context, "Minimap");
+		Widgets.hover(context, "Minimap");
 		context.takeScreenshot("jori-all-off");
 
 		context.setScreen(() -> null);
@@ -87,7 +87,7 @@ public class JoriClientGameTest implements FabricClientGameTest {
 
 		openFrom(context, () -> new PauseScreen(true), "jori-pause-again");
 		for (Feature feature : JoriClient.FEATURES) {
-			click(context, name(feature));
+			Widgets.click(context, name(feature));
 			if (!feature.isActive()) {
 				throw new AssertionError(feature.id() + " should be active after the second click");
 			}
@@ -96,7 +96,7 @@ public class JoriClientGameTest implements FabricClientGameTest {
 		context.takeScreenshot("jori-all-on");
 
 		// 完了で開いた画面に戻る
-		click(context, "Done");
+		Widgets.click(context, "Done");
 		assertScreen(context, PauseScreen.class);
 		context.setScreen(() -> null);
 		context.waitTick();
@@ -143,20 +143,8 @@ public class JoriClientGameTest implements FabricClientGameTest {
 	// 専用サーバーは起動するときに設定ファイルを読み、無効にした mod は受け口を作らない。
 	// テストではクライアントと同じ JVM で動くので、切り替えはクライアントにも及ぶ
 	private static void testDedicatedServer(ClientGameTestContext context) {
-		Properties properties = new Properties();
-		try {
-			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
-			Files.writeString(Path.of("eula.txt"), "eula=true\n");
-			// 普段のサーバーと重ならないよう空いているポートを使う
-			try (ServerSocket socket = new ServerSocket(0)) {
-				properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
-			}
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
-
 		write("minimap=false\nsorter=false\ntimber=false\nzoom=false\n");
-		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties)) {
+		try (TestDedicatedServerContext server = TestServers.create(context)) {
 			for (Feature feature : Feature.SERVER) {
 				assertEquals(feature.id() + " on the server", false, feature.isActive());
 			}
@@ -171,7 +159,7 @@ public class JoriClientGameTest implements FabricClientGameTest {
 				assertEquals("sorter missing", true, context.computeOnClient(client -> JoriClient.isMissingOnServer(client, Feature.SORTER)));
 				context.setScreen(() -> new JoriScreen(null));
 				context.waitTicks(2);
-				hover(context, "Sorter");
+				Widgets.hover(context, "Sorter");
 				context.takeScreenshot("jori-server-missing");
 				context.setScreen(() -> null);
 			}
@@ -209,7 +197,7 @@ public class JoriClientGameTest implements FabricClientGameTest {
 			}
 		});
 		context.takeScreenshot(screenshot);
-		click(context, "Jori");
+		Widgets.click(context, "Jori");
 		assertScreen(context, JoriScreen.class);
 	}
 
@@ -222,25 +210,6 @@ public class JoriClientGameTest implements FabricClientGameTest {
 
 	private static String name(Feature feature) {
 		return FabricLoader.getInstance().getModContainer(feature.id()).orElseThrow().getMetadata().getName();
-	}
-
-	private static void click(ClientGameTestContext context, String message) {
-		hover(context, message);
-		context.getInput().pressMouse(InputConstants.MOUSE_BUTTON_LEFT);
-		context.waitTicks(2);
-	}
-
-	private static void hover(ClientGameTestContext context, String message) {
-		int[] center = context.computeOnClient(client -> {
-			AbstractWidget widget = Screens.getWidgets(client.gui.screen()).stream()
-					.filter(w -> w.getMessage().getString().equals(message))
-					.findFirst()
-					.orElseThrow(() -> new AssertionError(message + " not found on " + client.gui.screen()));
-			int scale = client.getWindow().getGuiScale();
-			return new int[] {(widget.getX() + widget.getWidth() / 2) * scale, (widget.getY() + widget.getHeight() / 2) * scale};
-		});
-		context.getInput().setCursorPos(center[0], center[1]);
-		context.waitTicks(2);
 	}
 
 	private static void assertScreen(ClientGameTestContext context, Class<? extends Screen> expected) {
@@ -278,12 +247,6 @@ public class JoriClientGameTest implements FabricClientGameTest {
 			return Files.readString(JoriConfig.FILE);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
-		}
-	}
-
-	private static void assertEquals(String name, Object expected, Object actual) {
-		if (!expected.equals(actual)) {
-			throw new AssertionError(name + ": expected " + expected + " but was " + actual);
 		}
 	}
 }
