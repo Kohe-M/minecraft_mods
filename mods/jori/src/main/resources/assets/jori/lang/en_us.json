@@ -1,6 +1,6 @@
 {
 	"jori.description.fullbright": "Lifts the brightness cap so dark places stay visible.",
-	"jori.description.minimap": "Shows a map of your surroundings in the top right. Place pins on the map screen; each pin gets a beam of light.",
+	"jori.description.minimap": "Shows a map of your surroundings and your coordinates in the top right. Place pins on the map screen; each pin gets a beam of light.",
 	"jori.description.peek": "Hover over a shulker box to see its contents as icons.",
 	"jori.description.placer": "Keeps blocks placed by holding the button from stacking up or drifting off target.",
 	"jori.description.refill": "Refills your hand from the inventory the moment you use up the item you are holding.",

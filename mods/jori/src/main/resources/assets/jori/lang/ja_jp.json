@@ -1,6 +1,6 @@
 {
 	"jori.description.fullbright": "明るさの上限を超えて、暗い場所も見えるようにします。",
-	"jori.description.minimap": "画面の右上に周りの地図を出します。マップ画面ではピンを刺せて、ピンの位置には光の柱が立ちます。",
+	"jori.description.minimap": "画面の右上に周りの地図と今いる座標を出します。マップ画面ではピンを刺せて、ピンの位置には光の柱が立ちます。",
 	"jori.description.peek": "シュルカーボックスにカーソルを合わせると、中身をアイコンで出します。",
 	"jori.description.placer": "長押しで連続して置くとき、上に積み上がったり狙いからズレたりしないようにします。",
 	"jori.description.refill": "手に持ったアイテムを使い切ると、インベントリの同じアイテムをすぐに補充します。",
