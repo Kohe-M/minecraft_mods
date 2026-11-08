@@ -4,7 +4,7 @@
   test     変わった mod（または指定した mod）をビルドし、ゲームテストを走らせて結果をまとめる
   shots    スクリーンショットを一覧の画像と HTML にまとめる（テストは走らせない）
   status   リリースしていない変更がある mod を出す
-  release  mod_version を上げてコミットし、タグを付ける
+  release  mod_version を上げてコミットし、タグを付けて、その状態の jar を作る
 """
 
 import argparse
@@ -490,16 +490,44 @@ def release_one(mod, level, trailers, dry_run):
     return tag
 
 
+def jar_path(mod):
+    return MODS_DIR / mod / "build" / "libs" / f"{mod}-{mod_version(mod)}+{minecraft_version()}.jar"
+
+
+def untracked_sources():
+    """jar に入りうる、追跡していないファイル。あるとタグと jar が食い違う。ゲームテストは jar に入らない"""
+    files = git("ls-files", "--others", "--exclude-standard", "--", "mods", *SHARED_PATHS).split()
+    return [f for f in files if "/src/gametest/" not in f]
+
+
+def build_jars(mods):
+    """タグを付けた状態で jar を作る。CI はないので、配る jar はこれ。テストは test で済ませているので走らせない"""
+    tasks = [f":{m}:assemble" for m in mods]
+    print("$ gradlew " + " ".join(tasks), flush=True)
+    if subprocess.run(gradlew() + tasks + ["-q", "--console=plain"], cwd=ROOT).returncode != 0:
+        sys.exit("jar のビルドに失敗した。リリースのコミットとタグは手元にだけあり、push はしていない")
+    for mod in mods:
+        jar = jar_path(mod)
+        if not jar.is_file():
+            sys.exit(f"{jar.relative_to(ROOT).as_posix()} ができていない。push はしていない")
+        print(f"  {jar.relative_to(ROOT).as_posix()}")
+
+
 def command_release(args):
     if len(args.items) % 2:
         sys.exit("mod と上げ方を組で書く（例: release sorter minor timber patch）")
-    pairs = list(zip(args.items[0::2], args.items[1::2]))
+    # jori は中の mod を上げた後のコミットにタグを付ける（そうしないと jori のタグに古い中の mod が入る）
+    pairs = sorted(zip(args.items[0::2], args.items[1::2]), key=lambda pair: pair[0] == BUNDLE)
     check_mods([m for m, _ in pairs])
     for mod, level in pairs:
         if level not in LEVELS:
             sys.exit(f"{mod} の上げ方 {level} は patch / minor / major のどれか")
-    if git("status", "--porcelain", "--untracked-files=no").strip() and not args.dry_run:
-        sys.exit("コミットしていない変更がある。先にコミットする")
+    if not args.dry_run:
+        if git("status", "--porcelain", "--untracked-files=no").strip():
+            sys.exit("コミットしていない変更がある。先にコミットする")
+        untracked = untracked_sources()
+        if untracked:
+            sys.exit("追跡していないファイルがあり、jar に入るとタグと食い違う。コミットするか消す:\n  " + "\n  ".join(untracked))
 
     tags = [release_one(mod, level, args.trailer, args.dry_run) for mod, level in pairs]
     inner = [(m, l) for m, l in pairs if m != BUNDLE]
@@ -507,6 +535,13 @@ def command_release(args):
     if inner and BUNDLE not in dict(pairs) and not args.no_bundle:
         level = max((l for _, l in inner), key=LEVELS.index)
         tags.append(release_one(BUNDLE, level, args.trailer, args.dry_run))
+
+    # 中の mod のタグから後は jori の版しか変わらないので、最後のタグの状態で全部作ればどれもタグと同じ中身になる
+    released = [tag.split("/", 1)[0] for tag in tags]
+    if args.dry_run:
+        print("jar: " + " ".join(f":{m}:assemble" for m in released))
+    else:
+        build_jars(released)
 
     if args.push and not args.dry_run:
         subprocess.run(["git", "push", "--follow-tags"], cwd=ROOT, check=True)
@@ -537,7 +572,7 @@ def main():
     status = commands.add_parser("status", help="リリースしていない変更がある mod を出す")
     status.set_defaults(run=command_status)
 
-    release = commands.add_parser("release", help="mod_version を上げてコミットし、タグを付ける")
+    release = commands.add_parser("release", help="mod_version を上げてコミットし、タグを付けて jar を作る")
     release.add_argument("items", nargs="+", metavar="mod level", help="mod と上げ方（patch / minor / major）の組")
     release.add_argument("--no-bundle", action="store_true", help="jori を一緒に上げない")
     release.add_argument("--push", action="store_true", help="最後に git push --follow-tags する")

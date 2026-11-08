@@ -19,7 +19,7 @@
 
 `mods/<mod>` に mod ごとの Gradle プロジェクトを置く。構成と仕組みは [docs/architecture.md](docs/architecture.md)、mod ごとの仕様は [docs/mods/](docs/mods/)。開発の決まりごとは [AGENTS.md](AGENTS.md)。
 
-成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。
+成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。リリース（`python tools/dev.py release`）すると `mods/<mod>/build/libs/` にできる。
 
 ## Jori の設定
 

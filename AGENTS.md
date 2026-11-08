@@ -46,7 +46,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 1. 実装する
 2. `python tools/dev.py test` で、変更した mod のビルドとゲームテスト（server・client）を通す
 3. コミットメッセージのルールに沿ってコミットする
-4. リリースするなら `python tools/dev.py release <mod> <patch|minor|major>` で版を上げてタグを付ける（下の「タグ」）
+4. リリースするなら `python tools/dev.py release <mod> <patch|minor|major>` で版を上げてタグを付け、jar を作る（下の「タグ」）
 5. `git push --follow-tags` で、今いるブランチとタグを push する
 
 - テストが通らない、不具合が見つかったときは、報告で止めずに原因を調べて直し、テストが通るまで繰り返す
@@ -63,6 +63,10 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 - `python tools/dev.py release sorter minor timber patch` で、版を上げるコミット（`chore(<mod>): <版> をリリース`）とタグをまとめて作る
   - jori に入っている mod を上げると、jori も一番大きい上げ方で一緒に上げる（`--no-bundle` で止める）
   - エージェントは `--trailer "Co-Authored-By: ..."` でコミットの末尾の行を足す。`--push` で push まで、`--dry-run` で何が上がるかだけ見る
+  - 最後に、上げた mod の jar をタグの状態で作る（`:<mod>:assemble`。テストは `dev.py test` で済ませているので走らせない）。CI はないので、配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar` のこれ。ビルドに失敗したら push しない
+  - jori は中の mod を上げた後のコミットにタグを付ける。jori のタグと jar に、上げた後の中の mod が入るようにするため
+  - 追跡していないファイルが `mods/` や共通の設定にあると、jar に入ってタグと食い違うので止まる（ゲームテストのソースは jar に入らないので除く）
+- MC 移植のタグを手で付けたときは、そのコミットで `./gradlew assemble` を走らせて jar を作る
 - `python tools/dev.py status` で、最後のタグの後にリリースしていない変更がある mod が分かる
 
 ## コミットメッセージ
