@@ -23,6 +23,9 @@ bin/
 .classpath
 .project
 
+# python
+__pycache__/
+
 # java
 hs_err_*.log
 replay_*.log
