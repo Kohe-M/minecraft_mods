@@ -3,6 +3,7 @@
 	"package": "com.omuraisu.xray.client.mixin",
 	"compatibilityLevel": "JAVA_25",
 	"client": [
+		"BlockEntityRenderDispatcherMixin",
 		"LevelSliceMixin",
 		"RenderSectionRegionMixin"
 	],

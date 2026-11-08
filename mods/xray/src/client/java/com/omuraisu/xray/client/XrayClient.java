@@ -15,6 +15,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class XrayClient implements ClientModInitializer {
@@ -107,8 +108,9 @@ public class XrayClient implements ClientModInitializer {
 		return mode;
 	}
 
+	// 宝箱を探せるように、普通のチェストはどの鉱石を選んでいても見せる
 	public static boolean isVisible(BlockState state) {
-		return mode.matches(state);
+		return state.is(Blocks.CHEST) || mode.matches(state);
 	}
 
 	public static void select(Minecraft client, OreMode selected) {
