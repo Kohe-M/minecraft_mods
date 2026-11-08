@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,6 +30,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.Ticket;
 import net.minecraft.server.level.TicketType;
@@ -283,13 +285,16 @@ public final class TerrainServer {
 	}
 
 	// 地図に要るのは地形と地物だけなので、光の計算やエンティティの読み込みをする FULL までは進めない（FEATURES のまま保存される）。
-	// getChunkFuture だけでは 1 tick で札が外れ、生成に時間がかかるチャンクは途中で捨てられるので、生成し終えるまで外れない札を付ける
+	// getChunkFuture だけでは 1 tick で札が外れ、生成に時間がかかるチャンクは途中で捨てられるので、生成し終えるまで外れない札を付ける。
+	// getChunkFuture はメインスレッドから呼ぶと生成し終えるまで待つので、自前のスレッドから呼ぶ（メインスレッドに頼むだけになる）
 	private void generate(ServerLevel level, long chunk) {
 		LongSet generatingHere = generatingChunks.computeIfAbsent(level.dimension(), key -> new LongOpenHashSet());
 		generatingHere.add(chunk);
 		ChunkPos pos = ChunkPos.unpack(chunk);
-		level.getChunkSource().addTicket(new Ticket(TICKET, ChunkLevel.byStatus(ChunkStatus.FEATURES)), pos);
-		level.getChunkSource().getChunkFuture(pos.x(), pos.z(), ChunkStatus.FEATURES, true)
+		ServerChunkCache source = level.getChunkSource();
+		source.addTicket(new Ticket(TICKET, ChunkLevel.byStatus(ChunkStatus.FEATURES)), pos);
+		CompletableFuture.supplyAsync(() -> source.getChunkFuture(pos.x(), pos.z(), ChunkStatus.FEATURES, true), worker)
+				.thenCompose(future -> future)
 				.whenComplete((result, error) -> server.execute(() -> {
 					if (current != this) {
 						return;
