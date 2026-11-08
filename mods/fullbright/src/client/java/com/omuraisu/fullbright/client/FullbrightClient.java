@@ -27,6 +27,8 @@ public class FullbrightClient implements ClientModInitializer {
 
 	public static KeyMapping key;
 
+	// Jori の一覧で無効にされている間は false。キーも効かず、明るさはバニラのまま
+	private static volatile boolean active = true;
 	private static boolean enabled = true;
 	private static int level = MAX_LEVEL;
 
@@ -53,7 +55,7 @@ public class FullbrightClient implements ClientModInitializer {
 			clicked = true;
 		}
 
-		if (client.gui.screen() != null) {
+		if (!active || client.gui.screen() != null) {
 			held = false;
 			scrolled = false;
 			return;
@@ -74,8 +76,16 @@ public class FullbrightClient implements ClientModInitializer {
 		scrolled = false;
 	}
 
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		active = value;
+	}
+
 	public static boolean isEnabled() {
-		return enabled;
+		return active && enabled;
 	}
 
 	public static int level() {
@@ -84,7 +94,7 @@ public class FullbrightClient implements ClientModInitializer {
 
 	// キーを押している間のホイールは調整に使い、ホットバーには回さない
 	public static boolean scroll(Minecraft client, int steps) {
-		if (!key.isDown() || client.gui.screen() != null) {
+		if (!active || !key.isDown() || client.gui.screen() != null) {
 			return false;
 		}
 		scrolled = true;

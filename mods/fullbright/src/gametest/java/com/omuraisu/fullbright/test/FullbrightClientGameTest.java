@@ -45,6 +45,7 @@ public class FullbrightClientGameTest implements FabricClientGameTest {
 			context.waitTicks(5);
 
 			testToggleAndLevel(context);
+			testInactive(context);
 			testConfig(context);
 
 			if (FabricLoader.getInstance().isModLoaded("iris")) {
@@ -102,6 +103,36 @@ public class FullbrightClientGameTest implements FabricClientGameTest {
 			throw new AssertionError("hotbar slot should change when the key is not held");
 		}
 		assertState(true, FullbrightClient.MIN_LEVEL + 1);
+	}
+
+	// Jori で無効にされている間は、明るさもキーもホイールもバニラのまま。戻すと元の明るさに戻る
+	private static void testInactive(ClientGameTestContext context) {
+		assertState(true, FullbrightClient.MIN_LEVEL + 1);
+		double on = brightness(context, "active");
+
+		context.runOnClient(client -> FullbrightClient.setActive(false));
+		try {
+			double off = brightness(context, "inactive");
+			if (off * 2 > on) {
+				throw new AssertionError("inactive should look vanilla but was " + off + " against " + on);
+			}
+			int slot = selectedSlot(context);
+			tap(context);
+			adjust(context, 1);
+			if (FullbrightClient.isEnabled()) {
+				throw new AssertionError("key should do nothing while inactive");
+			}
+			if (selectedSlot(context) == slot) {
+				throw new AssertionError("scroll should reach the hotbar while inactive");
+			}
+		} finally {
+			context.runOnClient(client -> FullbrightClient.setActive(true));
+		}
+		assertState(true, FullbrightClient.MIN_LEVEL + 1);
+		double back = brightness(context, "active-again");
+		if (Math.abs(back - on) > 1) {
+			throw new AssertionError("brightness should come back to " + on + " but was " + back);
+		}
 	}
 
 	private static void testConfig(ClientGameTestContext context) {
