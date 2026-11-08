@@ -1,19 +1,16 @@
 package com.omuraisu.peek.test;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.net.ServerSocket;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import static com.omuraisu.testkit.Asserts.assertEquals;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 import java.util.function.Predicate;
 
 import com.omuraisu.peek.client.ClientShulkerPreview;
 import com.omuraisu.peek.client.PeekClient;
 import com.omuraisu.peek.client.ShulkerPreview;
 import com.omuraisu.peek.test.mixin.AbstractContainerScreenAccessor;
+import com.omuraisu.testkit.TestServers;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
@@ -187,19 +184,7 @@ public class PeekClientGameTest implements FabricClientGameTest {
 
 	// サーバーに mod が無くても、届いた中身から出せる
 	private static void testDedicatedServer(ClientGameTestContext context) {
-		Properties properties = new Properties();
-		try {
-			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
-			Files.writeString(Path.of("eula.txt"), "eula=true\n");
-			// 普段のサーバーと重ならないよう空いているポートを使う
-			try (ServerSocket socket = new ServerSocket(0)) {
-				properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
-			}
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
-
-		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties);
+		try (TestDedicatedServerContext server = TestServers.create(context);
 				TestDedicatedServerConnection connection = server.connect()) {
 			connection.waitForChunksRender();
 			Scene scene = new Scene(context, server);
@@ -298,12 +283,6 @@ public class PeekClientGameTest implements FabricClientGameTest {
 		String actual = scene.context.computeOnClient(client -> String.valueOf(client.gui.screen()));
 		if (!scene.context.computeOnClient(client -> type.isInstance(client.gui.screen()))) {
 			throw new AssertionError("screen: expected " + type.getSimpleName() + " but was " + actual);
-		}
-	}
-
-	private static void assertEquals(String what, int expected, int actual) {
-		if (expected != actual) {
-			throw new AssertionError(what + ": expected " + expected + " but was " + actual);
 		}
 	}
 
