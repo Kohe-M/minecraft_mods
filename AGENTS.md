@@ -27,9 +27,10 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 エージェントが自律的に作業し、動くものを仕上げて push まで行う。途中でユーザーに確認しない。
 
 1. 実装する
-2. 変更した mod のビルドとゲームテストを通す（client 側のゲームテストがある mod はそれも）
+2. `python tools/dev.py test` で、変更した mod のビルドとゲームテスト（server・client）を通す
 3. コミットメッセージのルールに沿ってコミットする
-4. `git push --follow-tags` で、今いるブランチとタグを push する
+4. リリースするなら `python tools/dev.py release <mod> <patch|minor|major>` で版を上げてタグを付ける（下の「タグ」）
+5. `git push --follow-tags` で、今いるブランチとタグを push する
 
 - テストが通らない、不具合が見つかったときは、報告で止めずに原因を調べて直し、テストが通るまで繰り返す
   - テストを消す・飛ばす・判定をゆるめて通すのは禁止。直すのは実装の側
@@ -42,6 +43,10 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 
 - `<mod>/<mod_version>+<MC>`（例: `sorter/1.0.0+26.3`）の注釈付きタグ
 - `mod_version` を上げたコミット、または MC 移植を終えたコミットに付ける
+- `python tools/dev.py release sorter minor timber patch` で、版を上げるコミット（`chore(<mod>): <版> をリリース`）とタグをまとめて作る
+  - jori に入っている mod を上げると、jori も一番大きい上げ方で一緒に上げる（`--no-bundle` で止める）
+  - エージェントは `--trailer "Co-Authored-By: ..."` でコミットの末尾の行を足す。`--push` で push まで、`--dry-run` で何が上がるかだけ見る
+- `python tools/dev.py status` で、最後のタグの後にリリースしていない変更がある mod が分かる
 
 ## コミットメッセージ
 
@@ -79,17 +84,38 @@ build: Fabric API を 0.166.0+26.3 に更新
 
 ## ビルドとテスト
 
-`JAVA_HOME` は JDK 8 を指しているので、JDK 25 を指定してから実行する。
+`JAVA_HOME` はどの JDK でもよい（いまは JDK 8 を指している）。Gradle のデーモンは `gradle/gradle-daemon-jvm.properties` の JDK 25 を、インストール済みの JDK から自動で探して使う。
 
 ```bash
-export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
-./gradlew build                                         # ビルド + server ゲームテスト（sorter, timber）
-./gradlew :fullbright:runClientGameTest :jori:runClientGameTest :minimap:runClientGameTest :peek:runClientGameTest :placer:runClientGameTest :refill:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
-./gradlew :xray:runClient                                # -PnoSodium でバニラ描画
+python tools/dev.py test                 # 上流のブランチから変わった mod を、ビルド + server・client のゲームテスト
+python tools/dev.py test sorter jori     # mod を指定する
+python tools/dev.py test --all           # 全 mod
+python tools/dev.py test --no-sodium     # Sodium / Iris を入れずにバニラ描画で
+python tools/dev.py shots                # いまあるスクリーンショットを一覧にまとめ直す
+./gradlew build                          # ビルド + server ゲームテスト（sorter, timber）
+./gradlew runClientGameTest              # 全 mod の client ゲームテスト
+./gradlew :xray:runClient                # -PnoSodium でバニラ描画
 ```
 
-- 見た目は `runClientGameTest` のスクリーンショット（`mods/<mod>/build/run/clientGameTest/screenshots`）で確認する
-- 全 mod の `runClientGameTest` を一度に走らせると、まれにどれかのクライアントが起動の途中で止まる（ログが進まず、スクリーンショットも出ない）。そのプロセスを止めて、その mod だけ走らせ直す
+- `dev.py test` は、jori に入っている mod が変わったら jori も走らせる。ルートのビルド設定（`build.gradle` など）が変わったら全 mod
+- 結果は最後に mod ごとに 1 行で出る。失敗したら、例外とこのリポジトリのスタックの行も出す
+  - `build/dev/report.html`: 結果の表とすべてのスクリーンショット（人が見る用）
+  - `build/dev/sheets/<mod>-<n>.png`: スクリーンショットを 20 枚ずつ 1 枚に並べた画像。見た目はまずこれを Read して確かめる
+  - `build/dev/gradle.log`: gradle の出力すべて
+- client ゲームテストは同時に 3 つまで起動する（`-PclientSlots=N`）。一度に多く起動すると、どれかが起動の途中で止まることがあるため
+- 1 つが 10 分を超えたら止める（`-PclientTimeout=分`）。`dev.py test` は時間切れのものだけ 1 つずつ走らせ直す。テストの失敗は走らせ直さない
+- Python 3 と、一覧の画像に Pillow を使う（なければ画像は作らず HTML だけ）
+
+### ゲームテストの道具（testkit）
+
+`testkit/java/com/omuraisu/testkit` は、全 mod の gametest のソースセットに一緒にコンパイルされる。ほかの mod のテストからコピーせずにこれを使う。
+
+| クラス | |
+|---|---|
+| `TestServers.create(context[, properties])` | EULA に同意し、空いているポートで専用サーバーを立てる |
+| `Widgets.click(context, "文字")` / `hover` | 画面のボタンなどを表示している文字で探し、実際のマウスで押す・カーソルを置く |
+| `Screenshots.read(path, image -> ...)` | `takeScreenshot` の画像の画素を読む |
+| `Asserts.assertEquals(名前, 期待, 実際)` | 何を比べていたかが分かる失敗にする |
 
 ## mod の作り方
 
@@ -104,7 +130,7 @@ export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 - 新しい mod は jori にも入れる（下の「jori の仕様」）
   - `isActive()` / `setActive(boolean)` を用意し、false の間はバニラと同じにふるまう。ゲームテストで `setActive(false)` の間の動きを確かめる
   - `mods/jori/build.gradle` の `modules`、`JoriClient.FEATURES`（サーバーでも動くなら `Feature.SERVER` にも）、jori の言語ファイルの `jori.description.<mod>` に足す
-- 中の mod を変えたら、その mod のリリースの後に jori の `mod_version` も上げてリリースする（jori の jar に入る版が変わるため）
+- 中の mod を変えたら、その mod のリリースの後に jori の `mod_version` も上げてリリースする（jori の jar に入る版が変わるため）。`dev.py release` は自動で上げる
 
 ## Iris + Sodium 対応
 

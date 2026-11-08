@@ -22,6 +22,9 @@ minecraft_mods/
 ├─ gradle.properties    MC バージョンセット（MC・Loader・Loom・Fabric API・Java・Sodium・Iris）
 ├─ build.gradle         全 mod 共通のビルド設定
 ├─ settings.gradle      mod の登録
+├─ gradle/gradle-daemon-jvm.properties  Gradle を動かす JDK（25）
+├─ tools/dev.py         テスト・スクリーンショットの一覧・リリースのコマンド
+├─ testkit/             全 mod のゲームテストで使う道具
 └─ mods/
    ├─ fullbright/
    │  ├─ gradle.properties mod_version
@@ -69,9 +72,11 @@ git branch mc/26.3 && git push -u origin mc/26.3
 
 ## ビルド
 
+JDK 25 が入っていれば、`JAVA_HOME` はどの JDK でもよい。
+
 ```bash
-export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
-./gradlew build
+python tools/dev.py test            # 変えた mod のビルドとゲームテスト。結果は build/dev/report.html
+python tools/dev.py status          # リリースしていない変更
+python tools/dev.py release sorter minor
 ./gradlew :xray:runClient
-./gradlew :sorter:runClientGameTest
 ```
