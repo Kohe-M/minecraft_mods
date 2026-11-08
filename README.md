@@ -17,29 +17,7 @@
 
 ## 構成
 
-```
-minecraft_mods/
-├─ gradle.properties    MC バージョンセット（MC・Loader・Loom・Fabric API・Java・Sodium・Iris）
-├─ build.gradle         全 mod 共通のビルド設定
-├─ settings.gradle      mod の登録
-├─ gradle/gradle-daemon-jvm.properties  Gradle を動かす JDK（25）
-├─ tools/dev.py         テスト・スクリーンショットの一覧・リリースのコマンド
-├─ testkit/             全 mod のゲームテストで使う道具
-└─ mods/
-   ├─ fullbright/
-   │  ├─ gradle.properties mod_version
-   │  ├─ build.gradle      その mod だけの設定
-   │  └─ src/
-   ├─ jori/             ほかの mod の jar を中に入れて、有効・無効を切り替える
-   ├─ minimap/
-   ├─ peek/
-   ├─ placer/
-   ├─ refill/
-   ├─ sorter/
-   ├─ timber/
-   ├─ xray/
-   └─ zoom/
-```
+`mods/<mod>` に mod ごとの Gradle プロジェクトを置く。構成と仕組みは [docs/architecture.md](docs/architecture.md)、mod ごとの仕様は [docs/mods/](docs/mods/)。開発の決まりごとは [AGENTS.md](AGENTS.md)。
 
 成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。
 
