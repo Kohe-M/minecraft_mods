@@ -84,7 +84,7 @@ build: Fabric API を 0.166.0+26.3 に更新
 ```bash
 export JAVA_HOME="/c/Program Files/Eclipse Adoptium/jdk-25.0.4.101-hotspot"
 ./gradlew build                                         # ビルド + server ゲームテスト（sorter, timber）
-./gradlew :fullbright:runClientGameTest :minimap:runClientGameTest :placer:runClientGameTest :refill:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
+./gradlew :fullbright:runClientGameTest :minimap:runClientGameTest :peek:runClientGameTest :placer:runClientGameTest :refill:runClientGameTest :sorter:runClientGameTest :xray:runClientGameTest :zoom:runClientGameTest
 ./gradlew :xray:runClient                                # -PnoSodium でバニラ描画
 ```
 
