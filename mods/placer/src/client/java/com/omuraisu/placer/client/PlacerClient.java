@@ -20,6 +20,8 @@ public class PlacerClient implements ClientModInitializer {
 
 	public static KeyMapping toggle;
 
+	// Jori の一覧で無効にされている間は false。キーも効かず、設置はバニラのまま
+	private static volatile boolean active = true;
 	private static boolean enabled = true;
 
 	@Override
@@ -37,6 +39,9 @@ public class PlacerClient implements ClientModInitializer {
 
 	private static void tick(Minecraft client) {
 		while (toggle.consumeClick()) {
+			if (!active) {
+				continue;
+			}
 			enabled = !enabled;
 			save();
 			if (client.player != null) {
@@ -46,8 +51,16 @@ public class PlacerClient implements ClientModInitializer {
 		Placement.tick(client);
 	}
 
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		active = value;
+	}
+
 	public static boolean enabled() {
-		return enabled;
+		return active && enabled;
 	}
 
 	private static boolean load() {

@@ -45,6 +45,7 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 			testToggleKey();
 			testHoldPlacesOne();
 			testVanillaWhenDisabled();
+			testVanillaWhenInactive();
 			testSweep();
 			testWall();
 			testBridge();
@@ -85,6 +86,30 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 	}
 
 	// 上と同じ操作で、無効ならバニラどおり増える
+	// Jori で無効にされている間は、J キーも効かずバニラのまま。戻すと J キーで決めた状態に戻る
+	private void testVanillaWhenInactive() {
+		setEnabled(true);
+		context.runOnClient(client -> PlacerClient.setActive(false));
+		try {
+			pressToggle();
+			assertEnabled(false);
+			assertConfig("enabled=true");
+
+			setUp(Items.OAK_PLANKS);
+			aim(onFloor(0, -3));
+			holdUse();
+			context.waitTicks(HOLD_TICKS);
+			releaseUse();
+			int count = placed(Blocks.OAK_PLANKS).size();
+			if (count < 2) {
+				throw new AssertionError("vanilla should place several blocks while inactive but placed " + count);
+			}
+		} finally {
+			context.runOnClient(client -> PlacerClient.setActive(true));
+		}
+		assertEnabled(true);
+	}
+
 	private void testVanillaWhenDisabled() {
 		setEnabled(false);
 		setUp(Items.OAK_PLANKS);
