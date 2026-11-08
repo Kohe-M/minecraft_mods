@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.ARGB;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 
@@ -174,8 +175,9 @@ final class MapTerrain {
 		return depth <= 3 ? MapColor.Brightness.HIGH : depth <= 8 ? MapColor.Brightness.NORMAL : MapColor.Brightness.LOW;
 	}
 
+	// ClientLevel.hasChunk は常に true を返すので、チャンクを直接見る
 	private boolean isLoaded(int x, int z) {
-		return level.hasChunk(x >> 4, z >> 4);
+		return level.getChunkSource().getChunk(x >> 4, z >> 4, ChunkStatus.FULL, false) != null;
 	}
 
 	private int surfaceY(int x, int z, int feetY) {
