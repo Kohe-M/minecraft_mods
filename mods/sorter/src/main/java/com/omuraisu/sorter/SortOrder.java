@@ -35,7 +35,7 @@ import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.item.equipment.EquipmentAsset;
 import net.minecraft.world.item.equipment.Equippable;
 
-// 並び順の仕様は AGENTS.md の「sorter の並び順」を参照
+// 並び順の仕様は docs/mods/sorter.md の「並び順」を参照
 public final class SortOrder {
 	// 宣言順がそのまま並び順。band が同じグループは関連が深く、同じ行に並んでもよい
 	public enum Group {
