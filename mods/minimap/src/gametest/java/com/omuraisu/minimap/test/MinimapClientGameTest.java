@@ -1,16 +1,15 @@
 package com.omuraisu.minimap.test;
 
+import static com.omuraisu.testkit.Asserts.assertEquals;
+
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -25,6 +24,8 @@ import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.client.MapScreen;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.client.Pins;
+import com.omuraisu.testkit.Screenshots;
+import com.omuraisu.testkit.TestServers;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -639,7 +640,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		int right = view.x(PLAYER_X + live) + 3;
 		int top = view.y(PLAYER_Z - live) - 3;
 		int bottom = view.y(PLAYER_Z + live) + 3;
-		int gaps = readImage(context.takeScreenshot("far-terrain-seam"), image -> {
+		int gaps = Screenshots.read(context.takeScreenshot("far-terrain-seam"), image -> {
 			int count = 0;
 			for (int y = top; y <= bottom; y++) {
 				for (int x = left; x <= right; x++) {
@@ -839,7 +840,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> MinimapClient.PINS.remove(pin));
 		context.waitTicks(3);
 		Path without = context.takeScreenshot(name + "-without");
-		return readImage(with, withImage -> readImage(without, withoutImage -> {
+		return Screenshots.read(with, withImage -> Screenshots.read(without, withoutImage -> {
 			int width = withImage.getWidth();
 			int height = withImage.getHeight();
 			int top = height / 8;
@@ -869,7 +870,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 	// 照準のすぐ上にある名前の文字（白）のピクセルの数
 	private static int labelPixels(ClientGameTestContext context, String name, int guiScale) {
-		return readImage(context.takeScreenshot(name), image -> {
+		return Screenshots.read(context.takeScreenshot(name), image -> {
 			int count = 0;
 			int centerX = image.getWidth() / 2;
 			int centerY = image.getHeight() / 2;
@@ -987,8 +988,6 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	// 専用サーバーに接続しても動く。ピンはサーバーごとのファイルに保存され、他のプレイヤーは通信で届く
 	private static void testDedicatedServer(ClientGameTestContext context) {
 		try {
-			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
-			Files.writeString(Path.of("eula.txt"), "eula=true\n");
 			// 前回の実行のピンが残らないようにする
 			Path pinDirectory = Pins.serverFile("x").getParent();
 			if (Files.isDirectory(pinDirectory)) {
@@ -1002,15 +1001,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			throw new UncheckedIOException(e);
 		}
 
-		// 普段のサーバーと重ならないよう空いているポートを使う
-		Properties properties = new Properties();
-		try (ServerSocket socket = new ServerSocket(0)) {
-			properties.setProperty("server-port", String.valueOf(socket.getLocalPort()));
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
-
-		try (TestDedicatedServerContext server = context.worldBuilder().createServer(properties)) {
+		try (TestDedicatedServerContext server = TestServers.create(context)) {
 			Pins.Pin pin;
 			Pins.Pin named;
 			try (TestDedicatedServerConnection connection = server.connect()) {
@@ -1047,7 +1038,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				zoomAtCenter(context, -3);
 				waitForFarTerrain(context, far);
 				ScreenView farView = new ScreenView(854, 480, 0.25, feet[0] + 0.5, feet[1] + 0.5);
-				int farPixel = readImage(context.takeScreenshot("server-far-terrain"),
+				int farPixel = Screenshots.read(context.takeScreenshot("server-far-terrain"),
 						image -> image.getPixel(farView.x(far.getMiddleBlockX()), farView.y(far.getMiddleBlockZ())));
 				if (farPixel == EMPTY_COLOR) {
 					throw new AssertionError("far terrain from the dedicated server should be drawn");
@@ -1149,7 +1140,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	// 左下の操作の説明を 1 行ずつ読む。文字は真っ白で、地形や背景には出ない色
 	private static void assertHints(ClientGameTestContext context, String name, boolean visible) {
 		int guiScale = context.computeOnClient(client -> client.getWindow().getGuiScale());
-		readImage(context.takeScreenshot(name), image -> {
+		Screenshots.read(context.takeScreenshot(name), image -> {
 			int rowHeight = 11 * guiScale;
 			int bottom = image.getHeight() - 4 * guiScale;
 			for (int row = 1; row <= 2; row++) {
@@ -1196,7 +1187,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		rebindPlaceKey(context, InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_R));
 		Path after = context.takeScreenshot("map-hints-rebound");
 		int guiScale = context.computeOnClient(client -> client.getWindow().getGuiScale());
-		readImage(before, beforeImage -> readImage(after, afterImage -> {
+		Screenshots.read(before, beforeImage -> Screenshots.read(after, afterImage -> {
 			int rowHeight = 11 * guiScale;
 			int bottom = beforeImage.getHeight() - 4 * guiScale;
 			int width = 200 * guiScale;
@@ -1275,7 +1266,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	}
 
 	private static void assertPixel(ClientGameTestContext context, String name, int x, int y, int expected) {
-		int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(x, y));
+		int pixel = Screenshots.read(context.takeScreenshot(name), image -> image.getPixel(x, y));
 		if (pixel != expected) {
 			throw new AssertionError(name + ": expected " + Integer.toHexString(expected) + " at " + x + ", " + y
 					+ " but was " + Integer.toHexString(pixel));
@@ -1301,7 +1292,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 
 		void assertBlock(ClientGameTestContext context, String name, int blockX, int blockZ, MapColor color) {
-			int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(x(blockX), y(blockZ)));
+			int pixel = Screenshots.read(context.takeScreenshot(name), image -> image.getPixel(x(blockX), y(blockZ)));
 			for (MapColor.Brightness brightness : MapColor.Brightness.values()) {
 				if (ARGB.opaque(color.calculateARGBColor(brightness)) == pixel) {
 					return;
@@ -1312,7 +1303,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 
 		void assertNotBlock(ClientGameTestContext context, String name, int blockX, int blockZ, MapColor color) {
-			int pixel = readImage(context.takeScreenshot(name), image -> image.getPixel(x(blockX), y(blockZ)));
+			int pixel = Screenshots.read(context.takeScreenshot(name), image -> image.getPixel(x(blockX), y(blockZ)));
 			if (isMapColor(pixel, color)) {
 				throw new AssertionError(name + ": something should be drawn at " + blockX + ", " + blockZ + " but it was terrain");
 			}
@@ -1444,7 +1435,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 	private static void assertNoFrame(ClientGameTestContext context, String name) {
 		context.waitTicks(3);
-		readImage(context.takeScreenshot(name), image -> {
+		Screenshots.read(context.takeScreenshot(name), image -> {
 			Frame frame = findFrame(image);
 			if (frame != null) {
 				throw new AssertionError(name + ": map should be hidden but found " + frame);
@@ -1456,7 +1447,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static Frame frame(ClientGameTestContext context, String name, int width, int height) {
 		context.getInput().resizeWindow(width, height);
 		context.waitTicks(3);
-		return readImage(context.takeScreenshot(name), image -> {
+		return Screenshots.read(context.takeScreenshot(name), image -> {
 			if (image.getWidth() != width || image.getHeight() != height) {
 				throw new AssertionError(name + ": screenshot was " + image.getWidth() + "x" + image.getHeight());
 			}
@@ -1471,7 +1462,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	private static Map map(ClientGameTestContext context, String name, int width, int height) {
 		context.getInput().resizeWindow(width, height);
 		context.waitTicks(3);
-		return readImage(context.takeScreenshot(name), image -> {
+		return Screenshots.read(context.takeScreenshot(name), image -> {
 			Frame frame = findFrame(image);
 			if (frame == null) {
 				throw new AssertionError(name + ": map frame not found");
@@ -1521,12 +1512,6 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 	}
 
-	private static void assertEquals(String name, int expected, int actual) {
-		if (expected != actual) {
-			throw new AssertionError(name + ": expected " + expected + " but was " + actual);
-		}
-	}
-
 	private static boolean isMapColor(int pixel, MapColor color) {
 		for (MapColor.Brightness brightness : MapColor.Brightness.values()) {
 			if (ARGB.opaque(color.calculateARGBColor(brightness)) == pixel) {
@@ -1534,18 +1519,6 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			}
 		}
 		return false;
-	}
-
-	private static <T> T readImage(Path path, ImageReader<T> reader) {
-		try (InputStream in = Files.newInputStream(path); NativeImage image = NativeImage.read(in)) {
-			return reader.read(image);
-		} catch (IOException e) {
-			throw new UncheckedIOException(e);
-		}
-	}
-
-	private interface ImageReader<T> {
-		T read(NativeImage image);
 	}
 
 	private record Frame(int x, int y, int size) {
