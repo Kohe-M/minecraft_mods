@@ -11,6 +11,8 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.function.Function;
 
+import com.omuraisu.refill.client.RefillClient;
+
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerConnection;
@@ -70,9 +72,23 @@ public class RefillClientGameTest implements FabricClientGameTest {
 			doesNotRefillAfterSwapHands(scene);
 			doesNotRefillAfterInventoryMove(scene);
 			doesNotRefillAfterSlotChange(scene);
+			doesNotRefillWhileInactive(scene);
 		}
 
 		testDedicatedServer(context);
+	}
+
+	// Jori で無効にされている間は補充しない。戻せばまた補充する
+	private static void doesNotRefillWhileInactive(Scene scene) {
+		scene.context.runOnClient(client -> RefillClient.setActive(false));
+		try {
+			scene.start(at(HAND, Items.COBBLESTONE, 1), at(MAIN, Items.COBBLESTONE, 5));
+			scene.use();
+			scene.assertInventory(at(MAIN, Items.COBBLESTONE, 5));
+		} finally {
+			scene.context.runOnClient(client -> RefillClient.setActive(true));
+		}
+		refillsPlacedBlock(scene);
 	}
 
 	private static void refillsPlacedBlock(Scene scene) {

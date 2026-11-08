@@ -23,6 +23,9 @@ public class RefillClient implements ClientModInitializer {
 	// 骨粉や繁殖の餌のようにサーバーだけが減らすものは、使った少し後に空になるので、消すまで持っておく
 	private static final Map<InteractionHand, Used> USED = new EnumMap<>(InteractionHand.class);
 
+	// Jori の一覧で無効にされている間は false。何も補充しない
+	private static volatile boolean active = true;
+
 	private record Used(ItemStack stack, int handSlot) {
 	}
 
@@ -34,6 +37,14 @@ public class RefillClient implements ClientModInitializer {
 		ClientTickEvents.END_CLIENT_TICK.register(RefillClient::tick);
 	}
 
+	public static boolean isActive() {
+		return active;
+	}
+
+	public static void setActive(boolean value) {
+		active = value;
+	}
+
 	public static void forgetUses() {
 		USED.clear();
 	}
@@ -41,7 +52,7 @@ public class RefillClient implements ClientModInitializer {
 	private static InteractionResult onUse(Player player, Level level, InteractionHand hand) {
 		ItemStack stack = player.getItemInHand(hand);
 		// シングルプレイでは内蔵サーバーのスレッドからも呼ばれる
-		if (level.isClientSide() && !stack.isEmpty()) {
+		if (active && level.isClientSide() && !stack.isEmpty()) {
 			USED.put(hand, new Used(stack.copy(), handSlot(player, hand)));
 		}
 		return InteractionResult.PASS;
@@ -50,7 +61,7 @@ public class RefillClient implements ClientModInitializer {
 	private static void tick(Minecraft client) {
 		LocalPlayer player = client.player;
 		// 画面を開いている間に手から動かしたものは補充しない
-		if (player == null || client.gui.screen() != null) {
+		if (!active || player == null || client.gui.screen() != null) {
 			forgetUses();
 			return;
 		}
