@@ -5,6 +5,9 @@
 - HUD を隠す（F1）のは `Minecraft.gui.hud.toggle()` / `isHidden()`。`Options.hideGui` はない
 - `InputConstants.MOUSE_BUTTON_LEFT` は 1（GLFW の 0 ではない）。クライアントゲームテストの `pressMouse` もこれを使う
 - チェストなどのブロックエンティティはチャンクのメッシュに入らず、`BlockEntityRenderDispatcher.tryExtractRenderState` で描画の状態を作る（Sodium も同じ）。明るさ（`lightCoords`）は本物のワールドから読み、`BlockEntityRenderer.shouldRender` は既定で 64 ブロックより遠いものを描かない
+- エンティティの明るさは `EntityRenderer.getPackedLightCoords`（final）が本物のワールドから読む。描く距離は `Entity.shouldRender(DDD)`（当たり判定の 3 辺の平均 × 64 × エンティティの描画距離の設定。鶏で 32 ブロック）で、`EntityRenderer.shouldRender` が視錐台より先に見る
+- いまのカメラの視錐台は `Minecraft.gameRenderer.mainCamera().getCullFrustum()`
+- エンティティの種類の定数は `EntityTypes.SHEEP` など。`EntityType` にはなく、`EntityTypeIds` は `ResourceKey`
 - 全チャンクの再構築は `Minecraft.levelExtractor.allChanged()`（F3+A と同じ）。`levelRenderer.invalidateCompiledGeometry` を直接呼ぶと、素の描画では再構築が予約されず何も描かれなくなる
 - クライアントゲームテストの入力は、マウスのイベントに修飾キーを載せない。Shift の判定は `event.hasShiftDown()` ではなく `Minecraft.hasShiftDown()` を使う
 - `GameRenderer.projectPointToScreen` はカメラの後ろの点も画面の中に写す。前後はカメラの向きとの内積で判定する
