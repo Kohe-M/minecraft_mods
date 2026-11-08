@@ -34,12 +34,18 @@ import net.minecraft.world.level.ChunkPos;
 
 // マップ画面で描画距離の外に出す地形。サーバーから届いたチャンクの色を接続している間だけ覚えておき、
 // 開いている間は 32 × 32 チャンクずつのテクスチャにして描く。読み込み済みのチャンクは MapTerrain に任せる。
-// 届いた色はファイルにも残し（FarCache）、次に開いたときはまずそれを出して、サーバーから届いたものに差し替える
+// 届いた色はファイルにも残し（FarCache）、次に開いたときはまずそれを出して、サーバーから届いたものに差し替える。
+// 開いていない間も、プレイヤーの周りのマップ距離の分を頼んでおく
 public final class FarTerrain {
 	private static final int REGION_CHUNKS = 32;
 	private static final int REGION_BLOCKS = REGION_CHUNKS * 16;
 	// 届いていないチャンクを、この間隔で全部頼み直す（サーバーは前の依頼を置き換え、読んでいる途中のものは読み直さない）
 	private static final int REQUEST_INTERVAL = 5;
+	// マップ画面を開いていない間は、サーバーも少しずつしか進めないので、頼み直す間隔を空ける
+	private static final int BACKGROUND_REQUEST_INTERVAL = 20;
+	// 開いていない間に、離れた色を捨てる間隔と、届いた色をファイルに書く間隔
+	private static final int BACKGROUND_PRUNE_INTERVAL = 200;
+	private static final int BACKGROUND_SAVE_INTERVAL = 1200;
 	// 1 tick に作ったり送ったりするテクスチャの画素数。等倍のリージョン 4 枚分
 	private static final int UPLOAD_BUDGET = 4 * REGION_BLOCKS * REGION_BLOCKS;
 	// 引いているときは 1 画素に何ブロックも入るので、間引いた小さいテクスチャにする（2 の何乗ブロックで 1 画素か）
@@ -152,6 +158,37 @@ public final class FarTerrain {
 	void open(Minecraft client, Identifier dimension, ChunkPos player) {
 		saveChanges();
 		Dimension cache = dimension(dimension);
+		forgetFar(cache, player);
+		loadFiles(client, dimension, cache, player, KEEP_RADIUS);
+	}
+
+	// マップ画面を開いていない間、毎 tick 呼ぶ。プレイヤーの周り distance チャンク（マップ距離）の地形を近い順に頼んでおき、
+	// 開いたときにすぐ出せるようにする。手元に読み込まれているチャンクは手元の地形で描けるので頼まない（開いてから頼む）。
+	// distance が 0 なら頼まない
+	void tickBackground(Minecraft client, Identifier dimension, ChunkPos player, int distance) {
+		ticks++;
+		if (ticks % BACKGROUND_SAVE_INTERVAL == 0) {
+			saveChanges();
+		}
+		if (distance <= 0) {
+			cancel();
+			return;
+		}
+		Dimension cache = dimension(dimension);
+		if (ticks % BACKGROUND_PRUNE_INTERVAL == 0) {
+			forgetFar(cache, player);
+		}
+		if (ticks % BACKGROUND_REQUEST_INTERVAL != 0) {
+			return;
+		}
+		int radius = Math.min(distance, TerrainServer.RADIUS);
+		loadFiles(client, dimension, cache, player, radius);
+		request(cache, player.x() - radius, player.z() - radius, player.x() + radius, player.z() + radius,
+				player.x(), player.z(), client.level);
+	}
+
+	// 離れた場所の色と未生成の印を捨てる（ファイルには残る）。離れたリージョンのファイルは、戻ってきたら読み直す
+	private void forgetFar(Dimension cache, ChunkPos player) {
 		LongIterator chunks = cache.chunks.keySet().iterator();
 		while (chunks.hasNext()) {
 			long chunk = chunks.nextLong();
@@ -165,11 +202,19 @@ public final class FarTerrain {
 		int centerZ = Math.floorDiv(player.z(), REGION_CHUNKS);
 		int keepRegions = KEEP_RADIUS / REGION_CHUNKS + 1;
 		cache.cachedRegions.removeIf((long region) -> Math.max(Math.abs(ChunkPos.getX(region) - centerX), Math.abs(ChunkPos.getZ(region) - centerZ)) > keepRegions);
+	}
+
+	// プレイヤーの周り radius チャンクにかかる、まだ読んでいないリージョンのファイルを読む
+	private void loadFiles(Minecraft client, Identifier dimension, Dimension cache, ChunkPos player, int radius) {
 		if (!disk.isOpen()) {
 			return;
 		}
-		for (int rz = centerZ - keepRegions; rz <= centerZ + keepRegions; rz++) {
-			for (int rx = centerX - keepRegions; rx <= centerX + keepRegions; rx++) {
+		int minRX = Math.floorDiv(player.x() - radius, REGION_CHUNKS);
+		int minRZ = Math.floorDiv(player.z() - radius, REGION_CHUNKS);
+		int maxRX = Math.floorDiv(player.x() + radius, REGION_CHUNKS);
+		int maxRZ = Math.floorDiv(player.z() + radius, REGION_CHUNKS);
+		for (int rz = minRZ; rz <= maxRZ; rz++) {
+			for (int rx = minRX; rx <= maxRX; rx++) {
 				if (cache.cachedRegions.add(ChunkPos.pack(rx, rz))) {
 					int regionX = rx;
 					int regionZ = rz;
@@ -202,7 +247,7 @@ public final class FarTerrain {
 		Dimension cache = dimension(dimension);
 		updateRegions(client, cache, minX, minZ, maxX, maxZ);
 		if (ticks % REQUEST_INTERVAL == 0) {
-			request(cache, minX, minZ, maxX, maxZ, Math.clamp(centerX, minX, maxX), Math.clamp(centerZ, minZ, maxZ));
+			request(cache, minX, minZ, maxX, maxZ, Math.clamp(centerX, minX, maxX), Math.clamp(centerZ, minZ, maxZ), null);
 		}
 	}
 
@@ -285,12 +330,13 @@ public final class FarTerrain {
 	}
 
 	// 中心から外へ四角く回り、まだ届いていないチャンクを集める。未生成と答えられたものは生成の方に入れ、
-	// 生成を待つ間もセーブにあるチャンクを先に読んでもらえるようにする
-	private void request(Dimension cache, int minX, int minZ, int maxX, int maxZ, int centerX, int centerZ) {
+	// 生成を待つ間もセーブにあるチャンクを先に読んでもらえるようにする。
+	// background はマップ画面を開いていない間の依頼で、そのレベルに読み込まれているチャンクは頼まない
+	private void request(Dimension cache, int minX, int minZ, int maxX, int maxZ, int centerX, int centerZ, ClientLevel background) {
 		if (!ClientPlayNetworking.canSend(TerrainRequest.TYPE)) {
 			return;
 		}
-		Request request = new Request(cache, minX, minZ, maxX, maxZ);
+		Request request = new Request(cache, minX, minZ, maxX, maxZ, background);
 		int maxRing = Math.max(Math.max(centerX - minX, maxX - centerX), Math.max(centerZ - minZ, maxZ - centerZ));
 		for (int ring = 0; ring <= maxRing && !request.isFull(); ring++) {
 			for (int x = centerX - ring; x <= centerX + ring; x++) {
@@ -314,7 +360,7 @@ public final class FarTerrain {
 			cancel();
 			return;
 		}
-		ClientPlayNetworking.send(new TerrainRequest(request.read, request.generate));
+		ClientPlayNetworking.send(new TerrainRequest(request.read, request.generate, background != null));
 		requesting = true;
 	}
 
@@ -501,17 +547,20 @@ public final class FarTerrain {
 		private final int minZ;
 		private final int maxX;
 		private final int maxZ;
+		// 開いていない間の依頼なら、手元に読み込まれているチャンクを飛ばすためのレベル
+		private final ClientLevel background;
 		private final List<Long> read = new ArrayList<>();
 		private final List<Long> generate = new ArrayList<>();
 		// ファイルから出したチャンク。届いていないチャンクより後に頼む
 		private final List<Long> refresh = new ArrayList<>();
 
-		private Request(Dimension cache, int minX, int minZ, int maxX, int maxZ) {
+		private Request(Dimension cache, int minX, int minZ, int maxX, int maxZ, ClientLevel background) {
 			this.cache = cache;
 			this.minX = minX;
 			this.minZ = minZ;
 			this.maxX = maxX;
 			this.maxZ = maxZ;
+			this.background = background;
 		}
 
 		private boolean isFull() {
@@ -519,7 +568,7 @@ public final class FarTerrain {
 		}
 
 		private void collect(int x, int z) {
-			if (x < minX || x > maxX || z < minZ || z > maxZ) {
+			if (x < minX || x > maxX || z < minZ || z > maxZ || background != null && MapTerrain.isLoaded(background, x, z)) {
 				return;
 			}
 			long chunk = ChunkPos.pack(x, z);

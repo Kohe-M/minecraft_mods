@@ -4,6 +4,7 @@ import static com.omuraisu.testkit.Asserts.assertEquals;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,10 +20,12 @@ import java.util.stream.Stream;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.omuraisu.minimap.MapPriority;
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.TerrainRequest;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.mixin.ChunkMapInvoker;
+import com.omuraisu.minimap.mixin.ChunkTaskDispatcherAccessor;
 import com.omuraisu.minimap.client.MapScreen;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.client.Pins;
@@ -54,6 +57,9 @@ import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ChunkHolder;
+import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ChunkTaskPriorityQueue;
+import net.minecraft.server.level.FullChunkStatus;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ARGB;
@@ -98,6 +104,8 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			}
 		});
 
+		testConfig(context);
+
 		TestWorldSave save;
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			save = singleplayer.getWorldSave();
@@ -113,6 +121,8 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 			testMapScreen(context, singleplayer);
 			testPinNames(context, singleplayer, save);
 			testFarTerrain(context, singleplayer);
+			testGenerationOrder(singleplayer);
+			testMapDistance(context, singleplayer);
 			testBeams(context, singleplayer);
 			testOtherPlayers(context, singleplayer);
 			testNether(context, singleplayer);
@@ -159,10 +169,11 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 				throw new AssertionError("far terrain should keep generating but only " + generated + " chunks arrived");
 			}
 		}
-		// 開き直すと、前に届いた色をクライアントのファイルからすぐ出し、裏でサーバーのセーブから読み直す
+		// 開き直すと、前に届いた色をクライアントのファイルからすぐ出し、裏でサーバーのセーブから読み直す。
+		// マップ距離の分は開く前から読み直し始めるので、入ったときから数える
+		int before = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.received());
 		try (TestSingleplayerContext singleplayer = save.open()) {
 			singleplayer.getConnection().waitForChunksRender();
-			int before = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.received());
 			openFarMap(context);
 			context.waitTicks(10);
 			int shown = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
@@ -924,7 +935,7 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 
 		// 範囲の外を直接頼んでも読み込まない
 		ChunkPos beyond = new ChunkPos(home.x() + TerrainServer.RADIUS + 5, home.z());
-		context.runOnClient(client -> ClientPlayNetworking.send(new TerrainRequest(List.of(beyond.pack()), List.of(beyond.pack()))));
+		context.runOnClient(client -> ClientPlayNetworking.send(new TerrainRequest(List.of(beyond.pack()), List.of(beyond.pack()), false)));
 		context.waitTicks(40);
 		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, beyond.x(), beyond.z())) != null) {
 			throw new AssertionError("chunks beyond the radius should not be sent");
@@ -934,6 +945,190 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		zoomAtCenter(context, 3);
 		assertScale(context, 2);
 		toggleMap(context);
+	}
+
+	// マップ距離は config/minimap.txt。なければ既定の値で作り、範囲の外や壊れた値でも落ちない
+	private static void testConfig(ClientGameTestContext context) {
+		try {
+			Files.deleteIfExists(MinimapClient.CONFIG);
+			context.runOnClient(client -> MinimapClient.load());
+			assertFileEquals(MinimapClient.CONFIG, "map_distance=" + MinimapClient.DEFAULT_MAP_DISTANCE + "\n");
+			assertMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
+
+			setMapDistance(context, 999);
+			assertMapDistance(context, TerrainServer.RADIUS);
+			setMapDistance(context, -5);
+			assertMapDistance(context, 0);
+			Files.writeString(MinimapClient.CONFIG, "map_distance=abc\n");
+			context.runOnClient(client -> MinimapClient.load());
+			assertMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
+			setMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	private static void setMapDistance(ClientGameTestContext context, int distance) {
+		try {
+			Files.writeString(MinimapClient.CONFIG, "map_distance=" + distance + "\n");
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		context.runOnClient(client -> MinimapClient.load());
+	}
+
+	private static void assertMapDistance(ClientGameTestContext context, int expected) {
+		assertEquals("map distance", expected, (int) context.computeOnClient(client -> MinimapClient.mapDistance()));
+	}
+
+	// 生成の列では、地図だけのチャンクの仕事がプレイヤーの周りの仕事の後に回る。誰かが読み込むようになれば（FULL のレベル）前に戻り、
+	// 地図の札の届かない遠くのチャンクと、地図のために生成していないときは vanilla と同じくレベルの順
+	private static void testGenerationOrder(TestSingleplayerContext singleplayer) {
+		singleplayer.getServer().runOnServer(server -> {
+			ServerLevel level = server.overworld();
+			ChunkPos player = server.getPlayerList().getPlayers().getFirst().chunkPosition();
+			ChunkPos target = new ChunkPos(player.x() + 120, player.z());
+			ChunkPos neighbor = new ChunkPos(target.x() + 1, target.z());
+			ChunkPos border = new ChunkPos(player.x() + 2, player.z());
+			ChunkPos other = new ChunkPos(player.x() - 120, player.z());
+			int features = ChunkLevel.byStatus(ChunkStatus.FEATURES);
+			int full = ChunkLevel.byStatus(FullChunkStatus.FULL);
+
+			MapPriority priority = new MapPriority();
+			LongSet targets = new LongOpenHashSet();
+			targets.add(target.pack());
+			priority.update(level, targets);
+			ChunkTaskPriorityQueue queue = new ChunkTaskPriorityQueue("test");
+			((MapPriority.Queue) queue).minimap$setPriority(priority);
+			List<String> order = new ArrayList<>();
+			submit(queue, () -> order.add("map"), target, features);
+			submit(queue, () -> order.add("map neighbor"), neighbor, features + 1);
+			submit(queue, () -> order.add("player"), border, features + 2);
+			submit(queue, () -> order.add("other"), other, features + 3);
+			submit(queue, () -> order.add("map again"), target, features);
+			drain(queue);
+			assertEquals("order with map-only chunks", List.of("player", "other", "map", "map again", "map neighbor"), order);
+
+			order.clear();
+			submit(queue, () -> order.add("map"), target, features);
+			submit(queue, () -> order.add("player"), border, features + 2);
+			resort(queue, features, target, full);
+			drain(queue);
+			assertEquals("order after the map chunk is loaded by someone", List.of("map", "player"), order);
+
+			order.clear();
+			priority.update(level, new LongOpenHashSet());
+			submit(queue, () -> order.add("player"), border, features + 2);
+			submit(queue, () -> order.add("map"), target, features);
+			drain(queue);
+			assertEquals("order without generation for the map", List.of("map", "player"), order);
+		});
+	}
+
+	private static void submit(ChunkTaskPriorityQueue queue, Runnable task, ChunkPos chunk, int level) {
+		invoke(queue, "submit", new Class<?>[] {Runnable.class, long.class, int.class}, task, chunk.pack(), level);
+	}
+
+	private static void resort(ChunkTaskPriorityQueue queue, int oldLevel, ChunkPos chunk, int newLevel) {
+		invoke(queue, "resortChunkTasks", new Class<?>[] {int.class, ChunkPos.class, int.class}, oldLevel, chunk, newLevel);
+	}
+
+	// 列の操作は protected なので、vanilla の ChunkTaskDispatcher の代わりに呼ぶ
+	private static void invoke(ChunkTaskPriorityQueue queue, String name, Class<?>[] types, Object... args) {
+		try {
+			Method method = ChunkTaskPriorityQueue.class.getDeclaredMethod(name, types);
+			method.setAccessible(true);
+			method.invoke(queue, args);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
+	}
+
+	private static void drain(ChunkTaskPriorityQueue queue) {
+		for (ChunkTaskPriorityQueue.TasksForChunk tasks = queue.pop(); tasks != null; tasks = queue.pop()) {
+			tasks.tasks().forEach(Runnable::run);
+		}
+	}
+
+	// マップ画面を開いていなくても、プレイヤーの周りのマップ距離の分を頼んでおく。描画距離の外は FEATURES まで生成し、ワールドには読み込まない。
+	// 家の周りの地図のテストに重ならないよう、まだ地図に出したことのない南の遠くで確かめる
+	private static void testMapDistance(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		int renderDistance = context.computeOnClient(client -> client.options.getEffectiveRenderDistance());
+		int distance = MinimapClient.mapDistance();
+		ChunkPos home = new ChunkPos(PLAYER_X >> 4, PLAYER_Z >> 4);
+
+		ChunkPos area = new ChunkPos(home.x(), home.z() + 400);
+		// プレイヤーの札で生成の進むチャンクより遠く、マップ距離の中
+		int reach = Math.min(distance - 2, renderDistance + ChunkLevel.RADIUS_AROUND_FULL_CHUNK + 2);
+		ChunkPos near = new ChunkPos(area.x() + renderDistance + 2, area.z() - 1);
+		ChunkPos inside = new ChunkPos(area.x() - reach, area.z() + 3);
+		ChunkPos beyond = new ChunkPos(area.x() + distance + 6, area.z());
+		long start = context.computeOnClient(client -> client.level.getGameTime());
+		teleport(context, singleplayer, area.getMiddleBlockX(), area.getMiddleBlockZ());
+		assertMapOpen(context, false);
+		// 地図のために生成している間は、生成の列に地図の順番が付いている
+		boolean ordered = false;
+		for (int i = 0; i < 400 && !ordered; i++) {
+			ordered = singleplayer.getServer().computeOnServer(server -> {
+				var dispatcher = ((ChunkMapInvoker) server.overworld().getChunkSource().chunkMap).minimap$worldgenTaskDispatcher();
+				MapPriority priority = ((MapPriority.Queue) ((ChunkTaskDispatcherAccessor) dispatcher).minimap$queue()).minimap$priority();
+				return priority != null && priority.hasTargets();
+			});
+			context.waitTick();
+		}
+		if (!ordered) {
+			throw new AssertionError("generation for the map should be ordered after the player's chunks");
+		}
+		waitForFarTerrain(context, near, inside);
+		long elapsed = context.computeOnClient(client -> client.level.getGameTime()) - start;
+		System.out.printf("map-distance: %d chunks within %d ticks while the map was closed%n",
+				context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD)), elapsed);
+		assertMapOpen(context, false);
+		assertNotLoadedByServer(singleplayer, inside);
+		ChunkStatus insideStatus = heldStatus(singleplayer, inside);
+		if (insideStatus == null) {
+			insideStatus = storedStatus(singleplayer, inside);
+		}
+		assertEquals("status of the chunk generated for the map distance", ChunkStatus.FEATURES, insideStatus);
+		// マップ距離の外は頼まない
+		context.waitTicks(100);
+		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, beyond.x(), beyond.z())) != null) {
+			throw new AssertionError("chunk " + beyond + " beyond the map distance " + distance + " should not be requested");
+		}
+
+		// 無効の間は頼まず、生成の列も vanilla のまま
+		context.runOnClient(client -> Minimap.setActive(false));
+		ChunkPos quiet = new ChunkPos(home.x(), home.z() + 500);
+		ChunkPos quietNear = new ChunkPos(quiet.x() + renderDistance + 2, quiet.z());
+		teleport(context, singleplayer, quiet.getMiddleBlockX(), quiet.getMiddleBlockZ());
+		context.waitTicks(100);
+		boolean cleared = singleplayer.getServer().computeOnServer(server -> {
+			var dispatcher = ((ChunkMapInvoker) server.overworld().getChunkSource().chunkMap).minimap$worldgenTaskDispatcher();
+			MapPriority priority = ((MapPriority.Queue) ((ChunkTaskDispatcherAccessor) dispatcher).minimap$queue()).minimap$priority();
+			return priority == null || !priority.hasTargets();
+		});
+		boolean quietArrived = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, quietNear.x(), quietNear.z()) != null);
+		context.runOnClient(client -> Minimap.setActive(true));
+		if (!cleared) {
+			throw new AssertionError("generation order should be vanilla while the minimap is inactive");
+		}
+		if (quietArrived) {
+			throw new AssertionError("far terrain should not be requested while the minimap is inactive");
+		}
+		waitForFarTerrain(context, quietNear);
+
+		// マップ距離が 0 なら開いたときだけ頼む
+		setMapDistance(context, 0);
+		ChunkPos off = new ChunkPos(home.x(), home.z() + 600);
+		ChunkPos offNear = new ChunkPos(off.x() + renderDistance + 2, off.z());
+		teleport(context, singleplayer, off.getMiddleBlockX(), off.getMiddleBlockZ());
+		context.waitTicks(100);
+		boolean offArrived = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, offNear.x(), offNear.z()) != null);
+		setMapDistance(context, distance);
+		if (offArrived) {
+			throw new AssertionError("far terrain should not be requested in the background when the map distance is 0");
+		}
+		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
 	}
 
 	// 地表に 1 つ積む。Level.getHeight は読み込まれていないチャンクでは一番下を返すので、チャンクから高さを取る

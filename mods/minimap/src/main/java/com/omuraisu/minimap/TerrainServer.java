@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.mojang.logging.LogUtils;
 import com.omuraisu.minimap.mixin.ChunkMapInvoker;
+import com.omuraisu.minimap.mixin.ChunkTaskDispatcherAccessor;
 import com.omuraisu.minimap.mixin.IOWorkerAccessor;
 import com.omuraisu.minimap.mixin.RegionFileStorageAccessor;
 import com.omuraisu.minimap.mixin.SimpleRegionStorageAccessor;
@@ -51,7 +52,9 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 // マップ画面に描画距離の外を出すため、頼まれたチャンクの地形の色を送り返す。地図のためにチャンクをワールドへ読み込まない。
 // - メモリにあるチャンク: メインスレッドで色にする
 // - セーブにあるチャンク: リージョンファイルを自前のスレッドで直接読み、色にする（vanilla の IO スレッドを使わない）
-// - 未生成のチャンク: FEATURES まで生成する。同時に生成する数は、サーバーが予定より遅れていなければ増やし、遅れたら減らす
+// - 未生成のチャンク: FEATURES まで生成する。同時に生成する数は、サーバーが予定より遅れていなければ増やし、遅れたら減らす。
+//   地図だけのチャンクの生成は、vanilla の生成の列の一番後ろに回す（MapPriority）
+// マップ画面を開いていない人の依頼（マップ距離）は、開いている人の依頼の後に、少しずつ進める
 public final class TerrainServer {
 	// プレイヤーのいるチャンクからこの距離（チャンク）までしか送らない。どの解像度でも一番引いた地図が収まる
 	public static final int RADIUS = 192;
@@ -61,6 +64,10 @@ public final class TerrainServer {
 	private static final int READS_PER_TICK = 512;
 	private static final int READS_PER_TICK_BEHIND = 32;
 	private static final int MAX_READING = WORKERS * 128;
+	// マップ画面を開いていない人の依頼（マップ距離）は、開いている人の後に回し、遊んでいる間の負担を小さくする。
+	// 読み始めるのは 1 tick にこれまで、生成はサーバー全体で同時にこれまで。遅れている間は進めない
+	private static final int BACKGROUND_READS_PER_TICK = 32;
+	private static final int BACKGROUND_GENERATING = 4;
 	// メモリにあるチャンクから色を出すのはメインスレッドなので、1 tick に使う時間を絞る
 	private static final long LOADED_BUDGET_NANOS = 2_000_000;
 	// 同時に生成する数。遅れていなければ 1 秒ごとに増やし、遅れたら半分にする
@@ -92,6 +99,8 @@ public final class TerrainServer {
 	private int reading;
 	// 生成の前にセーブを確かめている分も数える
 	private int generating;
+	// そのうち、マップ画面を開いていない人のために始めた数
+	private int backgroundGenerating;
 	private int generationLimit = 16;
 	private int lastThrottle = Integer.MIN_VALUE / 2;
 	private final long[] tickTimes = new long[PACE_TICKS];
@@ -162,11 +171,13 @@ public final class TerrainServer {
 		Viewer viewer = viewers.computeIfAbsent(player.getUUID(), id -> new Viewer());
 		viewer.read = toArray(payload.read());
 		viewer.generate = toArray(payload.generate());
+		viewer.background = payload.background();
 	}
 
 	private void tick() {
 		if (!Minimap.isActive()) {
 			viewers.values().forEach(Viewer::cancel);
+			levels.values().forEach(state -> state.priority.clear());
 			return;
 		}
 		int now = server.getTickCount();
@@ -182,8 +193,10 @@ public final class TerrainServer {
 		boolean behind = previous != 0 && (time - previous) * 10 > expected * 11 || server.getAverageTickTimeNanos() > SLOW_TICK_NANOS || lowMemory;
 		adjustGenerationLimit(behind, now);
 
-		List<Viewer> active = new ArrayList<>();
-		List<ServerPlayer> players = new ArrayList<>();
+		List<Viewer> open = new ArrayList<>();
+		List<ServerPlayer> openPlayers = new ArrayList<>();
+		List<Viewer> background = new ArrayList<>();
+		List<ServerPlayer> backgroundPlayers = new ArrayList<>();
 		for (Map.Entry<UUID, Viewer> entry : viewers.entrySet()) {
 			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
 			Viewer viewer = entry.getValue();
@@ -192,17 +205,15 @@ public final class TerrainServer {
 			}
 			viewer.prune(now);
 			if (viewer.read.length > 0 || viewer.generate.length > 0) {
-				active.add(viewer);
-				players.add(player);
+				(viewer.background ? background : open).add(viewer);
+				(viewer.background ? backgroundPlayers : openPlayers).add(player);
 			}
 		}
 		long deadline = System.nanoTime() + LOADED_BUDGET_NANOS;
 		int reads = Math.max(0, Math.min(behind ? READS_PER_TICK_BEHIND : READS_PER_TICK, MAX_READING - reading));
-		int share = active.isEmpty() ? 0 : Math.max(1, (reads + active.size() - 1) / active.size());
-		// 見ている人が何人いても順に先を譲る
-		for (int i = 0; i < active.size(); i++) {
-			int index = (i + now) % active.size();
-			reads -= process(active.get(index), players.get(index), now, deadline, behind, Math.min(share, reads));
+		reads -= serve(open, openPlayers, now, deadline, behind, reads);
+		if (!behind) {
+			serve(background, backgroundPlayers, now, deadline, false, Math.min(reads, BACKGROUND_READS_PER_TICK));
 		}
 		for (Map.Entry<UUID, Viewer> entry : viewers.entrySet()) {
 			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
@@ -210,6 +221,21 @@ public final class TerrainServer {
 				entry.getValue().flush(player);
 			}
 		}
+		// 生成の列で地図だけのチャンクを後ろに回すため、プレイヤーの位置と生成しているチャンクを写す
+		for (LevelState state : levels.values()) {
+			state.priority.update(state.level, state.generating);
+		}
+	}
+
+	// 見ている人が何人いても順に先を譲る。読み始めた数を返す
+	private int serve(List<Viewer> viewers, List<ServerPlayer> players, int now, long deadline, boolean behind, int reads) {
+		int share = viewers.isEmpty() ? 0 : Math.max(1, (reads + viewers.size() - 1) / viewers.size());
+		int started = 0;
+		for (int i = 0; i < viewers.size(); i++) {
+			int index = (i + now) % viewers.size();
+			started += process(viewers.get(index), players.get(index), now, deadline, behind, Math.min(share, reads - started));
+		}
+		return started;
 	}
 
 	// 遅れていなければ 1 秒ごとに増やし（生成する数が上限に届いているときだけ）、遅れたら半分にする
@@ -242,13 +268,14 @@ public final class TerrainServer {
 				if (System.nanoTime() < deadline) {
 					sendLoaded(viewer, player, loaded, now);
 				}
-			} else if (!behind && generating < generationLimit) {
-				generating++;
+			} else if (!behind && generating < generationLimit && (!viewer.background || backgroundGenerating < BACKGROUND_GENERATING)) {
+				boolean background = viewer.background;
+				startGeneration(background);
 				if (state.isKnownMissing(chunk, now)) {
-					generate(state, chunk);
+					generate(state, chunk, background);
 				} else {
 					// 他のプレイヤーが生成したかもしれないので、先にセーブを確かめる
-					read(viewer, player, state, chunk, true);
+					read(viewer, player, state, chunk, true, background);
 				}
 			}
 		}
@@ -263,11 +290,26 @@ public final class TerrainServer {
 					sendLoaded(viewer, player, loaded, now);
 				}
 			} else if (started < reads) {
-				read(viewer, player, state, chunk, false);
+				read(viewer, player, state, chunk, false, false);
 				started++;
 			}
 		}
 		return started;
+	}
+
+	// 生成の前にセーブを確かめている間も数える。background はマップ画面を開いていない人のために始めたか
+	private void startGeneration(boolean background) {
+		generating++;
+		if (background) {
+			backgroundGenerating++;
+		}
+	}
+
+	private void endGeneration(boolean background) {
+		generating--;
+		if (background) {
+			backgroundGenerating--;
+		}
 	}
 
 	// メモリにあるチャンク。ワールドから外れて保存を待っている間も、セーブより新しいのでこちらを使う。
@@ -289,7 +331,7 @@ public final class TerrainServer {
 
 	// 読むのも色にするのも自前のスレッド。メインスレッドは結果を送るだけ。
 	// ワールドから外れてすぐのチャンクと、直接は読めなかったチャンクは vanilla の経路（IO スレッド）で読む
-	private void read(Viewer viewer, ServerPlayer player, LevelState state, long chunk, boolean generate) {
+	private void read(Viewer viewer, ServerPlayer player, LevelState state, long chunk, boolean generate, boolean background) {
 		ServerLevel level = state.level;
 		ChunkPos pos = ChunkPos.unpack(chunk);
 		ResourceKey<Level> dimension = level.dimension();
@@ -309,7 +351,7 @@ public final class TerrainServer {
 		}
 		tag.thenApplyAsync(data -> data == RegionReader.ABSENT ? null
 						: Optional.ofNullable(StoredChunk.read(level, data)).map(blocks -> TerrainColors.tile(pos, blocks, ceiling, feetY)).orElse(null), workers)
-				.whenComplete((tile, error) -> server.execute(() -> finishRead(viewer, id, dimension, chunk, tile, error, generate)));
+				.whenComplete((tile, error) -> server.execute(() -> finishRead(viewer, id, dimension, chunk, tile, error, generate, background)));
 	}
 
 	// 古い版のデータは読み込むときと同じく新しい形に直る
@@ -318,7 +360,8 @@ public final class TerrainServer {
 		return ((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$readChunk(pos).thenApply(tag -> tag.orElse(RegionReader.ABSENT));
 	}
 
-	private void finishRead(Viewer viewer, UUID id, ResourceKey<Level> dimension, long chunk, TerrainTile tile, Throwable error, boolean generate) {
+	private void finishRead(Viewer viewer, UUID id, ResourceKey<Level> dimension, long chunk, TerrainTile tile, Throwable error,
+			boolean generate, boolean background) {
 		if (current != this) {
 			return;
 		}
@@ -347,7 +390,7 @@ public final class TerrainServer {
 				state.missing.put(chunk, now);
 				if (generate) {
 					if (isInRange(player.chunkPosition(), ChunkPos.getX(chunk), ChunkPos.getZ(chunk))) {
-						generate(state, chunk);
+						generate(state, chunk, background);
 						generationStarted = true;
 					}
 				} else {
@@ -357,7 +400,7 @@ public final class TerrainServer {
 			}
 		} finally {
 			if (generate && !generationStarted) {
-				generating--;
+				endGeneration(background);
 			}
 		}
 	}
@@ -365,7 +408,7 @@ public final class TerrainServer {
 	// 地図に要るのは地形と地物だけなので、光の計算やエンティティの読み込みをする FULL までは進めない（FEATURES のまま保存される）。
 	// getChunkFuture だけでは 1 tick で札が外れ、生成に時間がかかるチャンクは途中で捨てられるので、生成し終えるまで外れない札を付ける。
 	// getChunkFuture はメインスレッドから呼ぶと生成し終えるまで待つので、自前のスレッドから呼ぶ（メインスレッドに頼むだけになる）
-	private void generate(LevelState state, long chunk) {
+	private void generate(LevelState state, long chunk, boolean background) {
 		state.generating.add(chunk);
 		ChunkPos pos = ChunkPos.unpack(chunk);
 		ServerChunkCache source = state.level.getChunkSource();
@@ -376,7 +419,7 @@ public final class TerrainServer {
 					if (current != this) {
 						return;
 					}
-					generating--;
+					endGeneration(background);
 					state.generating.remove(chunk);
 					ChunkAccess generated = result == null ? null : result.orElse(null);
 					if (generated != null && Minimap.isActive()) {
@@ -428,9 +471,14 @@ public final class TerrainServer {
 		private final Long2IntMap unloaded = new Long2IntOpenHashMap();
 		// 未生成と分かった tick
 		private final Long2IntMap missing = new Long2IntOpenHashMap();
+		private final MapPriority priority = new MapPriority();
+		private final MapPriority.Queue queue;
 
 		private LevelState(ServerLevel level) {
 			this.level = level;
+			var dispatcher = ((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$worldgenTaskDispatcher();
+			this.queue = (MapPriority.Queue) ((ChunkTaskDispatcherAccessor) dispatcher).minimap$queue();
+			queue.minimap$setPriority(priority);
 		}
 
 		private RegionReader reader() {
@@ -458,6 +506,7 @@ public final class TerrainServer {
 		}
 
 		private void close() {
+			queue.minimap$setPriority(null);
 			if (reader != null) {
 				reader.close();
 			}
@@ -469,6 +518,8 @@ public final class TerrainServer {
 
 		private long[] read = NONE;
 		private long[] generate = NONE;
+		// マップ画面を開いていない（マップ距離の分を頼んでいる）
+		private boolean background;
 		private ResourceKey<Level> level;
 		// セーブを読んでいるチャンク
 		private final LongSet pending = new LongOpenHashSet();

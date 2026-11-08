@@ -12,7 +12,7 @@ import net.minecraft.resources.Identifier;
 public record TerrainTiles(Identifier dimension, List<TerrainTile> tiles) implements CustomPacketPayload {
 	// 1 つのパケットに入れる数。1 チャンク 330 バイトほど
 	public static final int MAX_TILES = 64;
-	public static final Type<TerrainTiles> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v2/tiles"));
+	public static final Type<TerrainTiles> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v3/tiles"));
 	public static final StreamCodec<FriendlyByteBuf, TerrainTiles> CODEC = CustomPacketPayload.codec(TerrainTiles::write, TerrainTiles::read);
 
 	private static TerrainTiles read(FriendlyByteBuf buf) {

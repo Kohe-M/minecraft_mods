@@ -12,6 +12,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ChunkMap;
+import net.minecraft.server.level.ChunkTaskDispatcher;
 import net.minecraft.world.level.ChunkPos;
 
 @Mixin(ChunkMap.class)
@@ -26,4 +27,8 @@ public interface ChunkMapInvoker {
 	// ワールドから外れ、保存し終えるのを待っているチャンク。この間はセーブの中身が古い
 	@Accessor("pendingUnloads")
 	Long2ObjectLinkedOpenHashMap<ChunkHolder> minimap$pendingUnloads();
+
+	// 生成の仕事の列（地物の配置などはこの列で 1 つずつ動く）
+	@Accessor("worldgenTaskDispatcher")
+	ChunkTaskDispatcher minimap$worldgenTaskDispatcher();
 }
