@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 import com.mojang.authlib.GameProfile;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.NativeImage;
+import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.TerrainRequest;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.client.MapScreen;
@@ -261,6 +262,18 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> client.debugEntries.setOverlayVisible(true));
 		assertNoFrame(context, "hidden-f3");
 		context.runOnClient(client -> client.debugEntries.setOverlayVisible(false));
+
+		// Jori で無効にされている間は出さず、M キーでもマップ画面を開かない
+		context.runOnClient(client -> Minimap.setActive(false));
+		try {
+			assertNoFrame(context, "hidden-inactive");
+			toggleMap(context);
+			if (context.computeOnClient(client -> client.gui.screen()) != null) {
+				throw new AssertionError("map screen should not open while inactive");
+			}
+		} finally {
+			context.runOnClient(client -> Minimap.setActive(true));
+		}
 
 		frame(context, "hidden-restored", 854, 480);
 	}
@@ -754,6 +767,14 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		context.runOnClient(client -> client.gui.hud.toggle());
 		assertEquals("beam with hidden hud", 0, beamPixels(context, "beam-hidden", far));
 		context.runOnClient(client -> client.gui.hud.toggle());
+
+		// Jori で無効にされている間は出ない
+		context.runOnClient(client -> Minimap.setActive(false));
+		try {
+			assertEquals("beam while inactive", 0, beamPixels(context, "beam-inactive", far));
+		} finally {
+			context.runOnClient(client -> Minimap.setActive(true));
+		}
 
 		// 名前は柱に添えて出る。名前がなければ出ない
 		Pins.Pin named = new Pins.Pin(OVERWORLD, near.x(), near.z(), "Base");

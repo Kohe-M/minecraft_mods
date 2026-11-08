@@ -1,6 +1,7 @@
 package com.omuraisu.minimap.client;
 
 import com.mojang.blaze3d.platform.Window;
+import com.omuraisu.minimap.Minimap;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -35,7 +36,7 @@ final class MinimapHud {
 		Minecraft client = Minecraft.getInstance();
 		LocalPlayer player = client.player;
 		// 右上は F3 の表示と重なる
-		if (player == null || client.getDebugOverlay().showDebugScreen()) {
+		if (!Minimap.isActive() || player == null || client.getDebugOverlay().showDebugScreen()) {
 			return;
 		}
 

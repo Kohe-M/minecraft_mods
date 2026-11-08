@@ -2,6 +2,7 @@ package com.omuraisu.minimap.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.omuraisu.minimap.Minimap;
 
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.DeltaTracker;
@@ -35,7 +36,7 @@ final class PinBeams {
 	static void submit(LevelRenderContext context) {
 		Minecraft client = Minecraft.getInstance();
 		ClientLevel level = client.level;
-		if (level == null || client.gui.hud.isHidden()) {
+		if (!Minimap.isActive() || level == null || client.gui.hud.isHidden()) {
 			return;
 		}
 
@@ -59,7 +60,7 @@ final class PinBeams {
 	// 名前はカメラの高さで柱に添える
 	static void extractLabels(GuiGraphicsExtractor graphics, DeltaTracker delta) {
 		Minecraft client = Minecraft.getInstance();
-		if (client.level == null) {
+		if (!Minimap.isActive() || client.level == null) {
 			return;
 		}
 		Vec3 camera = client.gameRenderer.mainCamera().position();

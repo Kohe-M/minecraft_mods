@@ -4,6 +4,7 @@ import java.nio.file.Path;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
+import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.TerrainTile;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -55,6 +56,12 @@ public class MinimapClient implements ClientModInitializer {
 	}
 
 	private static void tick(Minecraft client) {
+		if (!Minimap.isActive()) {
+			while (mapKey.consumeClick()) {
+				// 無効の間に押した分は、戻したときに開かないよう捨てる
+			}
+			return;
+		}
 		MinimapHud.TERRAIN.tick(client);
 
 		if (client.player == null) {

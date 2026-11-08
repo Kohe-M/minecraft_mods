@@ -39,7 +39,13 @@ public final class TerrainServer {
 	}
 
 	static void register() {
-		ServerPlayNetworking.registerGlobalReceiver(TerrainRequest.TYPE, (payload, context) -> request(context.player(), payload.chunks()));
+		// 専用サーバーで無効にしているときは受け口を作らず、クライアントには手元のチャンクだけを出させる。
+		// シングルプレイは途中で切り替えられるので、受け口は作っておいて届いた時点で確かめる
+		ServerPlayConnectionEvents.INIT.register((handler, server) -> {
+			if (Minimap.isActive() || !server.isDedicatedServer()) {
+				ServerPlayNetworking.registerReceiver(handler, TerrainRequest.TYPE, (payload, context) -> request(context.player(), payload.chunks()));
+			}
+		});
 		ServerTickEvents.END_SERVER_TICK.register(TerrainServer::tick);
 		ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> QUEUES.remove(handler.player.getUUID()));
 	}
@@ -49,12 +55,19 @@ public final class TerrainServer {
 	}
 
 	private static void request(ServerPlayer player, List<Long> chunks) {
+		if (!Minimap.isActive()) {
+			return;
+		}
 		Queue queue = QUEUES.computeIfAbsent(player.getUUID(), id -> new Queue());
 		queue.waiting.clear();
 		queue.waiting.addAll(chunks);
 	}
 
 	private static void tick(MinecraftServer server) {
+		if (!Minimap.isActive()) {
+			QUEUES.values().forEach(queue -> queue.waiting.clear());
+			return;
+		}
 		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
 			Queue queue = QUEUES.get(player.getUUID());
 			if (queue == null) {
