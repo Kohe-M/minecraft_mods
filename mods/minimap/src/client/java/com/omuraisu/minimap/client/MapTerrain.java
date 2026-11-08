@@ -37,6 +37,8 @@ final class MapTerrain {
 	private int minZ;
 	private int cursor;
 	private boolean dirty;
+	private LevelChunk lastChunk;
+	private TerrainColors.Blocks lastBlocks;
 
 	MapTerrain(String name, int size, int emptyColor) {
 		this.texture = Identifier.fromNamespaceAndPath("minimap", name);
@@ -141,13 +143,23 @@ final class MapTerrain {
 			return emptyColor;
 		}
 		boolean ceiling = level.dimensionType().hasCeiling();
-		LevelChunk chunk = level.getChunk(x >> 4, z >> 4);
+		TerrainColors.Blocks chunk = blocks(x >> 4, z >> 4);
 		int y = TerrainColors.surfaceY(chunk, x, z, ceiling, feetY);
 		int northY = isLoaded(x, z - 1)
-				? TerrainColors.surfaceY(level.getChunk(x >> 4, (z - 1) >> 4), x, z - 1, ceiling, feetY)
+				? TerrainColors.surfaceY(blocks(x >> 4, (z - 1) >> 4), x, z - 1, ceiling, feetY)
 				: TerrainColors.UNKNOWN_Y;
 		int packed = TerrainColors.packedColor(chunk, x, z, y, northY);
 		return packed == 0 ? emptyColor : TerrainColors.argb(packed);
+	}
+
+	// 列ごとに作り直さないよう、直前のチャンクを覚えておく
+	private TerrainColors.Blocks blocks(int chunkX, int chunkZ) {
+		LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+		if (chunk != lastChunk) {
+			lastChunk = chunk;
+			lastBlocks = TerrainColors.of(chunk);
+		}
+		return lastBlocks;
 	}
 
 	private boolean isLoaded(int x, int z) {

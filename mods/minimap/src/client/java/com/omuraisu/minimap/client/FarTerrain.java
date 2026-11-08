@@ -1,18 +1,18 @@
 package com.omuraisu.minimap.client;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import com.omuraisu.minimap.TerrainColors;
+import com.omuraisu.minimap.TerrainMissing;
 import com.omuraisu.minimap.TerrainRequest;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.TerrainTile;
 
-import it.unimi.dsi.fastutil.longs.Long2IntMap;
-import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongIterator;
@@ -21,6 +21,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.ChunkPos;
@@ -30,18 +31,20 @@ import net.minecraft.world.level.ChunkPos;
 public final class FarTerrain {
 	private static final int REGION_CHUNKS = 32;
 	private static final int REGION_BLOCKS = REGION_CHUNKS * 16;
+	// 届いていないチャンクを、この間隔で全部頼み直す（サーバーは前の依頼を置き換え、読んでいる途中のものは読み直さない）
 	private static final int REQUEST_INTERVAL = 10;
-	// 頼んでからこれだけ届かなければ、もう一度頼む
-	private static final int RETRY_TICKS = 40;
 	// 1 tick に作ったり送ったりするテクスチャの画素数。等倍のリージョン 4 枚分
 	private static final int UPLOAD_BUDGET = 4 * REGION_BLOCKS * REGION_BLOCKS;
 	// 引いているときは 1 画素に何ブロックも入るので、間引いた小さいテクスチャにする（2 の何乗ブロックで 1 画素か）
 	private static final int MAX_LEVEL = 2;
 	// 覚えておく範囲。読み込める範囲より少し広くして、行き来しても頼み直さずに済むようにする
 	private static final int KEEP_RADIUS = TerrainServer.RADIUS + REGION_CHUNKS;
+	// 1 チャンク分のデータ。色 256 バイトのあとに、北の端と南の端の高さ（TerrainTile）を short 16 個ずつ
+	private static final int NORTH_EDGE = 16 * 16;
+	private static final int SOUTH_EDGE = NORTH_EDGE + 16 * 2;
+	private static final int TILE_BYTES = SOUTH_EDGE + 16 * 2;
 
 	private final Map<Identifier, Dimension> dimensions = new HashMap<>();
-	private final Long2IntMap requested = new Long2IntOpenHashMap();
 	private boolean requesting;
 	private int ticks;
 	private int received;
@@ -51,32 +54,57 @@ public final class FarTerrain {
 	private Identifier regionDimension;
 	private int level;
 
-	// 届いた色。テストから確かめる
+	// 届いた色。北の端の行は北のチャンクと比べた後の明るさ。テストから確かめる
 	public byte[] colors(Identifier dimension, int chunkX, int chunkZ) {
 		Dimension cache = dimensions.get(dimension);
-		return cache == null ? null : cache.chunks.get(ChunkPos.pack(chunkX, chunkZ));
+		byte[] tile = cache == null ? null : cache.chunks.get(ChunkPos.pack(chunkX, chunkZ));
+		return tile == null ? null : Arrays.copyOf(tile, 16 * 16);
 	}
 
 	public int received() {
 		return received;
 	}
 
+	// 覚えているチャンクの数。テストから確かめる
+	public int count(Identifier dimension) {
+		Dimension cache = dimensions.get(dimension);
+		return cache == null ? 0 : cache.chunks.size();
+	}
+
+	// 北の端の行は、北のチャンクの色が届いていればその高さと比べて明るさを決める。南のチャンクが先に届いていれば、その北の端も決め直す。
 	// テクスチャへの反映は tick でまとめて送る
-	void receive(TerrainTile tile) {
+	void receive(Minecraft client, TerrainTile tile) {
 		long chunk = tile.chunk();
 		int chunkX = ChunkPos.getX(chunk);
 		int chunkZ = ChunkPos.getZ(chunk);
 		Dimension cache = dimension(tile.dimension());
-		cache.chunks.put(chunk, tile.colors());
-		long key = regionOf(chunkX, chunkZ);
-		cache.regions.add(key);
-		requested.remove(chunk);
+		byte[] data = new byte[TILE_BYTES];
+		System.arraycopy(tile.colors(), 0, data, 0, 16 * 16);
+		for (int dx = 0; dx < 16; dx++) {
+			setEdge(data, NORTH_EDGE, dx, tile.northEdge()[dx]);
+			setEdge(data, SOUTH_EDGE, dx, tile.southEdge()[dx]);
+		}
+		cache.chunks.put(chunk, data);
+		cache.missing.remove(chunk);
+		cache.regions.add(regionOf(chunkX, chunkZ));
 		received++;
 
-		Region region = tile.dimension().equals(regionDimension) ? regions.get(key) : null;
-		if (region != null) {
-			paint(region.texture.getPixels(), Math.floorMod(chunkX, REGION_CHUNKS), Math.floorMod(chunkZ, REGION_CHUNKS), tile.colors(), level);
-			region.dirty = true;
+		resolveNorthRow(client, tile.dimension(), cache, chunkX, chunkZ, data);
+		repaint(tile.dimension(), chunkX, chunkZ, data);
+		byte[] south = cache.chunks.get(ChunkPos.pack(chunkX, chunkZ + 1));
+		if (south != null) {
+			resolveNorthRow(client, tile.dimension(), cache, chunkX, chunkZ + 1, south);
+			repaint(tile.dimension(), chunkX, chunkZ + 1, south);
+		}
+	}
+
+	// 未生成と答えられたチャンクは、次から生成を頼む
+	void missing(TerrainMissing payload) {
+		Dimension cache = dimension(payload.dimension());
+		for (long chunk : payload.chunks()) {
+			if (!cache.chunks.containsKey(chunk)) {
+				cache.missing.add(chunk);
+			}
 		}
 	}
 
@@ -85,23 +113,25 @@ public final class FarTerrain {
 		Dimension cache = dimensions.get(dimension);
 		if (cache != null) {
 			cache.chunks.remove(chunk.pack());
+			cache.missing.remove(chunk.pack());
 		}
 	}
 
 	void clear() {
 		dimensions.clear();
-		requested.clear();
 		requesting = false;
 	}
 
-	// 開いたときに、離れた場所の色を捨てる
+	// 開いたときに、離れた場所の色と未生成の印を捨てる
 	void open(Identifier dimension, ChunkPos player) {
-		LongIterator chunks = dimension(dimension).chunks.keySet().iterator();
+		Dimension cache = dimension(dimension);
+		LongIterator chunks = cache.chunks.keySet().iterator();
 		while (chunks.hasNext()) {
 			if (!isNear(player, chunks.nextLong(), KEEP_RADIUS)) {
 				chunks.remove();
 			}
 		}
+		cache.missing.removeIf((long chunk) -> !isNear(player, chunk, KEEP_RADIUS));
 	}
 
 	// マップ画面から毎 tick 呼ぶ。範囲はチャンクの座標で、center に近いものから頼む。scale は 1 ブロックの実ピクセル。
@@ -132,7 +162,6 @@ public final class FarTerrain {
 
 	void close(Minecraft client) {
 		cancel();
-		requested.clear();
 		releaseRegions(client);
 		regionDimension = null;
 	}
@@ -150,53 +179,91 @@ public final class FarTerrain {
 		return dimensions.computeIfAbsent(dimension, id -> new Dimension());
 	}
 
-	// 中心から外へ四角く回り、まだ届いていないチャンクを集める
+	// 中心から外へ四角く回り、まだ届いていないチャンクを集める。未生成と答えられたものは生成の方に入れ、
+	// 生成を待つ間もセーブにあるチャンクを先に読んでもらえるようにする
 	private void request(Dimension cache, int minX, int minZ, int maxX, int maxZ, int centerX, int centerZ) {
 		if (!ClientPlayNetworking.canSend(TerrainRequest.TYPE)) {
 			return;
 		}
-		List<Long> chunks = new ArrayList<>();
+		Request request = new Request(cache, minX, minZ, maxX, maxZ);
 		int maxRing = Math.max(Math.max(centerX - minX, maxX - centerX), Math.max(centerZ - minZ, maxZ - centerZ));
-		for (int ring = 0; ring <= maxRing && chunks.size() < TerrainRequest.MAX_CHUNKS; ring++) {
+		for (int ring = 0; ring <= maxRing && !request.isFull(); ring++) {
 			for (int x = centerX - ring; x <= centerX + ring; x++) {
-				collect(cache, chunks, x, centerZ - ring, minX, minZ, maxX, maxZ);
+				request.collect(x, centerZ - ring);
 				if (ring > 0) {
-					collect(cache, chunks, x, centerZ + ring, minX, minZ, maxX, maxZ);
+					request.collect(x, centerZ + ring);
 				}
 			}
 			for (int z = centerZ - ring + 1; z <= centerZ + ring - 1; z++) {
-				collect(cache, chunks, centerX - ring, z, minX, minZ, maxX, maxZ);
-				collect(cache, chunks, centerX + ring, z, minX, minZ, maxX, maxZ);
+				request.collect(centerX - ring, z);
+				request.collect(centerX + ring, z);
 			}
 		}
-		if (chunks.isEmpty()) {
+		if (request.read.isEmpty() && request.generate.isEmpty()) {
 			cancel();
 			return;
 		}
-		for (long chunk : chunks) {
-			requested.put(chunk, ticks);
-		}
-		ClientPlayNetworking.send(new TerrainRequest(chunks));
+		ClientPlayNetworking.send(new TerrainRequest(request.read, request.generate));
 		requesting = true;
 	}
 
-	private void collect(Dimension cache, List<Long> chunks, int x, int z, int minX, int minZ, int maxX, int maxZ) {
-		if (chunks.size() >= TerrainRequest.MAX_CHUNKS || x < minX || x > maxX || z < minZ || z > maxZ) {
-			return;
-		}
-		long chunk = ChunkPos.pack(x, z);
-		if (cache.chunks.containsKey(chunk) || ticks - requested.getOrDefault(chunk, Integer.MIN_VALUE / 2) < RETRY_TICKS) {
-			return;
-		}
-		chunks.add(chunk);
-	}
-
-	// 見えなくなったら、まだ読み込み始めていない分は取り消す
+	// 見えなくなったら、まだ読み始めていない分は取り消す
 	private void cancel() {
 		if (requesting && ClientPlayNetworking.canSend(TerrainRequest.TYPE)) {
-			ClientPlayNetworking.send(new TerrainRequest(List.of()));
+			ClientPlayNetworking.send(TerrainRequest.CANCEL);
 		}
 		requesting = false;
+	}
+
+	// 北のチャンクの南の端の高さと比べる。北の色が届いていなければ、手元に読み込まれているチャンクから出す
+	private void resolveNorthRow(Minecraft client, Identifier dimension, Dimension cache, int chunkX, int chunkZ, byte[] data) {
+		byte[] north = cache.chunks.get(ChunkPos.pack(chunkX, chunkZ - 1));
+		int[] northY;
+		if (north != null) {
+			northY = new int[16];
+			for (int dx = 0; dx < 16; dx++) {
+				northY[dx] = edge(north, SOUTH_EDGE, dx);
+			}
+		} else {
+			northY = localSouthEdge(client, dimension, chunkX, chunkZ - 1);
+		}
+		for (int dx = 0; dx < 16; dx++) {
+			int packed = Byte.toUnsignedInt(data[dx]);
+			data[dx] = (byte) TerrainColors.relief(packed, edge(data, NORTH_EDGE, dx), northY == null ? TerrainColors.UNKNOWN_Y : northY[dx]);
+		}
+	}
+
+	private static int[] localSouthEdge(Minecraft client, Identifier dimension, int chunkX, int chunkZ) {
+		ClientLevel level = client.level;
+		if (level == null || client.player == null || !level.dimension().identifier().equals(dimension)
+				|| !MapTerrain.isLoaded(level, chunkX, chunkZ)) {
+			return null;
+		}
+		TerrainColors.Blocks blocks = TerrainColors.of(level.getChunk(chunkX, chunkZ));
+		boolean ceiling = level.dimensionType().hasCeiling();
+		int feetY = client.player.getBlockY();
+		int[] heights = new int[16];
+		for (int dx = 0; dx < 16; dx++) {
+			heights[dx] = TerrainColors.surfaceY(blocks, chunkX * 16 + dx, chunkZ * 16 + 15, ceiling, feetY);
+		}
+		return heights;
+	}
+
+	private void repaint(Identifier dimension, int chunkX, int chunkZ, byte[] data) {
+		Region region = dimension.equals(regionDimension) ? regions.get(regionOf(chunkX, chunkZ)) : null;
+		if (region != null) {
+			paint(region.texture.getPixels(), Math.floorMod(chunkX, REGION_CHUNKS), Math.floorMod(chunkZ, REGION_CHUNKS), data, level);
+			region.dirty = true;
+		}
+	}
+
+	private static int edge(byte[] data, int offset, int dx) {
+		return (short) ((data[offset + dx * 2] & 0xFF) << 8 | data[offset + dx * 2 + 1] & 0xFF);
+	}
+
+	private static void setEdge(byte[] data, int offset, int dx, short y) {
+		data[offset + dx * 2] = (byte) (y >> 8);
+		data[offset + dx * 2 + 1] = (byte) y;
 	}
 
 	// 見えている範囲のテクスチャを作り、届いた分を送る。外れたテクスチャは捨てる
@@ -286,8 +353,49 @@ public final class FarTerrain {
 
 	private static final class Dimension {
 		private final Long2ObjectMap<byte[]> chunks = new Long2ObjectOpenHashMap<>();
+		// 未生成と答えられたチャンク。生成はサーバーがセーブを確かめてから始めるので、他の誰かが生成していても困らない
+		private final LongSet missing = new LongOpenHashSet();
 		// 色が 1 つでも届いたリージョン
 		private final LongSet regions = new LongOpenHashSet();
+	}
+
+	private static final class Request {
+		private final Dimension cache;
+		private final int minX;
+		private final int minZ;
+		private final int maxX;
+		private final int maxZ;
+		private final List<Long> read = new ArrayList<>();
+		private final List<Long> generate = new ArrayList<>();
+
+		private Request(Dimension cache, int minX, int minZ, int maxX, int maxZ) {
+			this.cache = cache;
+			this.minX = minX;
+			this.minZ = minZ;
+			this.maxX = maxX;
+			this.maxZ = maxZ;
+		}
+
+		private boolean isFull() {
+			return read.size() >= TerrainRequest.MAX_READ && generate.size() >= TerrainRequest.MAX_GENERATE;
+		}
+
+		private void collect(int x, int z) {
+			if (x < minX || x > maxX || z < minZ || z > maxZ) {
+				return;
+			}
+			long chunk = ChunkPos.pack(x, z);
+			if (cache.chunks.containsKey(chunk)) {
+				return;
+			}
+			if (cache.missing.contains(chunk)) {
+				if (generate.size() < TerrainRequest.MAX_GENERATE) {
+					generate.add(chunk);
+				}
+			} else if (read.size() < TerrainRequest.MAX_READ) {
+				read.add(chunk);
+			}
+		}
 	}
 
 	private static final class Region {

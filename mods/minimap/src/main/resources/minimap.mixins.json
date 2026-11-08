@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "com.omuraisu.minimap.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"mixins": [
+		"ChunkMapInvoker"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -21,11 +22,15 @@ import com.mojang.blaze3d.platform.NativeImage;
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.TerrainRequest;
 import com.omuraisu.minimap.TerrainServer;
+import com.omuraisu.minimap.mixin.ChunkMapInvoker;
 import com.omuraisu.minimap.client.MapScreen;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.client.Pins;
 import com.omuraisu.testkit.Screenshots;
 import com.omuraisu.testkit.TestServers;
+
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
 
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
@@ -35,6 +40,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerCon
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.fabric.api.entity.FakePlayer;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.irisshaders.iris.Iris;
 import net.minecraft.client.CloudStatus;
@@ -43,9 +49,11 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoRemovePacket;
 import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.ARGB;
@@ -56,8 +64,10 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.storage.SerializableChunkData;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 
 public class MinimapClientGameTest implements FabricClientGameTest {
@@ -76,8 +86,17 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 	// 全列を描き直すのにかかる時間より長く待つ
 	private static final int MAP_REFRESH_TICKS = 45;
 
+	// サーバーがワールドに読み込んだチャンク（FULL）。サーバーのスレッドでだけ触る
+	private static final LongSet FULL_LOADS = new LongOpenHashSet();
+
 	@Override
 	public void runTest(ClientGameTestContext context) {
+		ServerChunkEvents.CHUNK_LOAD.register((level, chunk, generated) -> {
+			if (level.dimension() == Level.OVERWORLD) {
+				FULL_LOADS.add(chunk.getPos().pack());
+			}
+		});
+
 		TestWorldSave save;
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			save = singleplayer.getWorldSave();
@@ -116,6 +135,65 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		testServerFile();
 		testDedicatedServer(context);
 		testNaturalTerrain(context);
+		testFarTerrainLoad(context);
+	}
+
+	// 4K で一番引いても、サーバーが遅れず、地図のためにチャンクをワールドへ読み込まない。
+	// 以前は描画距離の外を 1 つずつ FULL まで読み込み、ヒープを使い切ってサーバーが落ちていた
+	private static void testFarTerrainLoad(ClientGameTestContext context) {
+		TestWorldSave save;
+		int generated;
+		try (TestSingleplayerContext singleplayer = context.worldBuilder()
+				.setUseConsistentSettings(false)
+				.adjustSettings(creator -> creator.setSeed("far terrain load"))
+				.create()) {
+			save = singleplayer.getWorldSave();
+			singleplayer.getConnection().waitForChunksRender();
+			generated = watchFarTerrainLoad(context, singleplayer, "far-terrain-load", 600);
+			if (generated < 500) {
+				throw new AssertionError("far terrain should keep generating but only " + generated + " chunks arrived");
+			}
+		}
+		// 生成し終えた分はセーブから読むので、すぐ届く
+		try (TestSingleplayerContext singleplayer = save.open()) {
+			singleplayer.getConnection().waitForChunksRender();
+			int read = watchFarTerrainLoad(context, singleplayer, "far-terrain-load-reopened", 200);
+			if (read < generated) {
+				throw new AssertionError("chunks generated before should be read from the save within 10 seconds: " + read + " / " + generated);
+			}
+		}
+		context.getInput().resizeWindow(854, 480);
+		context.waitTicks(3);
+	}
+
+	// 一番引いたマップ画面を ticks の間開き、覚えている遠くの地形のチャンクの数を返す
+	private static int watchFarTerrainLoad(ClientGameTestContext context, TestSingleplayerContext singleplayer, String name, int ticks) {
+		singleplayer.getServer().runOnServer(server -> FULL_LOADS.clear());
+		context.getInput().resizeWindow(3840, 2160);
+		context.waitTicks(3);
+		toggleMap(context);
+		context.getInput().setCursorPos(1920, 1080);
+		scroll(context, -6);
+		assertScale(context, 1);
+		long maxTick = 0;
+		for (int waited = 0; waited < ticks; waited += 100) {
+			context.waitTicks(100);
+			maxTick = Math.max(maxTick, singleplayer.getServer().computeOnServer(server -> Arrays.stream(server.getTickTimesNanos()).max().orElse(0)));
+		}
+		context.takeScreenshot(name);
+		long averageTick = singleplayer.getServer().computeOnServer(server -> server.getAverageTickTimeNanos());
+		int loads = singleplayer.getServer().computeOnServer(server -> FULL_LOADS.size());
+		int received = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
+		System.out.printf("%s: %d chunks, max tick %d ms, average tick %d ms, loaded into the world %d%n",
+				name, received, maxTick / 1_000_000, averageTick / 1_000_000, loads);
+		toggleMap(context);
+		if (loads > 100) {
+			throw new AssertionError(name + ": " + loads + " chunks were loaded into the world for the map");
+		}
+		if (maxTick > 1_000_000_000L || averageTick > 50_000_000L) {
+			throw new AssertionError(name + ": server fell behind (max tick " + maxTick / 1_000_000 + " ms, average " + averageTick / 1_000_000 + " ms)");
+		}
+		return received;
 	}
 
 	// 起伏や水の見え方はスクリーンショットで確かめる
@@ -590,7 +668,8 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
 	}
 
-	// 描画距離の外も、サーバーに読み込ませて（なければ生成させて）マップ画面に出す
+	// 描画距離の外も、サーバーからマップ画面に出す。生成済みのチャンクはワールドに読み込まずにセーブから読み、
+	// 未生成のチャンクは地物を置くところ（FEATURES）まで生成させる
 	private static void testFarTerrain(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
 		int renderDistance = context.computeOnClient(client -> client.options.getEffectiveRenderDistance());
@@ -600,9 +679,20 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		ChunkPos plain = new ChunkPos(home.x() - renderDistance - 12, home.z() + 6);
 		// 手元の地形のテクスチャの角。読み込まれていないので透明になり、下の遠くの地形が見える
 		ChunkPos corner = new ChunkPos(home.x() + renderDistance + 1, home.z() + renderDistance);
-		singleplayer.getServer().runOnServer(server -> fill(server.overworld(),
-				new BlockPos(marked.getMinBlockX(), FLOOR_Y, marked.getMinBlockZ()),
-				new BlockPos(marked.getMaxBlockX(), FLOOR_Y, marked.getMaxBlockZ()), Blocks.GOLD_BLOCK));
+		// セーブにだけある目印のチャンク。プレイヤーの札は描画距離の外にも弱く及び、その間はメモリに残るので、それより遠くに置く
+		ChunkPos stored = new ChunkPos(home.x() - renderDistance - 24, home.z() - 4);
+		// 北の端の起伏は、ひとつ北のチャンクと比べて決める。南のチャンクの北の端の 1 列目は北より高く、2 列目は同じ、3 列目は北より低い
+		ChunkPos north = new ChunkPos(home.x() - renderDistance - 24, home.z() + 4);
+		ChunkPos south = new ChunkPos(north.x(), north.z() + 1);
+		singleplayer.getServer().runOnServer(server -> {
+			ServerLevel level = server.overworld();
+			fill(level, new BlockPos(marked.getMinBlockX(), FLOOR_Y, marked.getMinBlockZ()),
+					new BlockPos(marked.getMaxBlockX(), FLOOR_Y, marked.getMaxBlockZ()), Blocks.GOLD_BLOCK);
+			fill(level, new BlockPos(stored.getMinBlockX(), FLOOR_Y, stored.getMinBlockZ()),
+					new BlockPos(stored.getMaxBlockX(), FLOOR_Y, stored.getMaxBlockZ()), Blocks.DIAMOND_BLOCK);
+			raise(level, south.getMinBlockX(), south.getMinBlockZ());
+			raise(level, north.getMinBlockX() + 2, north.getMaxBlockZ());
+		});
 
 		// 前に地図を開いたときの色が残っていても、近づいて読み込めば捨て、離れてから開くと今の色で描く
 		teleport(context, singleplayer, marked.getMiddleBlockX(), marked.getMiddleBlockZ());
@@ -612,20 +702,29 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		}
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
 		context.waitFor(client -> !clientHasChunk(client, marked));
-		for (ChunkPos chunk : List.of(marked, plain, corner)) {
+		for (ChunkPos chunk : List.of(marked, plain, corner, stored, north, south)) {
 			if (context.computeOnClient(client -> clientHasChunk(client, chunk))) {
 				throw new AssertionError("far chunk " + chunk + " should be outside the render distance " + renderDistance);
 			}
 		}
+		waitUntilStored(context, singleplayer, stored, north, south);
 
 		toggleMap(context);
 		zoomAtCenter(context, -3);
 		assertScale(context, 0.25);
 		ScreenView view = new ScreenView(854, 480, 0.25, PLAYER_X + 0.5, PLAYER_Z + 0.5);
-		waitForFarTerrain(context, marked, plain, corner);
+		waitForFarTerrain(context, marked, plain, corner, stored, north, south);
 		view.assertBlock(context, "far-terrain-marked", marked.getMiddleBlockX(), marked.getMiddleBlockZ(), MapColor.GOLD);
 		view.assertBlock(context, "far-terrain-plain", plain.getMiddleBlockX(), plain.getMiddleBlockZ(), MapColor.GRASS);
 		view.assertBlock(context, "far-terrain-corner", corner.getMiddleBlockX(), corner.getMiddleBlockZ(), MapColor.GRASS);
+		view.assertBlock(context, "far-terrain-stored", stored.getMiddleBlockX(), stored.getMiddleBlockZ(), MapColor.DIAMOND);
+		for (ChunkPos chunk : List.of(stored, north, south, plain)) {
+			assertNotLoadedByServer(singleplayer, chunk);
+		}
+		byte[] southColors = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, south.x(), south.z()));
+		assertEquals("brightness of the north edge higher than the north chunk", MapColor.Brightness.HIGH.id, southColors[0] & 3);
+		assertEquals("brightness of the north edge as high as the north chunk", MapColor.Brightness.NORMAL.id, southColors[1] & 3);
+		assertEquals("brightness of the north edge lower than the north chunk", MapColor.Brightness.LOW.id, southColors[2] & 3);
 
 		// 手元のテクスチャとのつなぎ目にすき間がない
 		int live = (renderDistance + 1) * 16;
@@ -688,9 +787,17 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		assertPixel(context, "far-terrain-outside", panned.x(outside.getMiddleBlockX()), panned.y(outside.getMiddleBlockZ()), EMPTY_COLOR);
 		toggleMap(context);
 
+		// 地図のために生成したチャンクは FULL まで進めず、地物を置いた段階で保存する
+		assertNotLoadedByServer(singleplayer, edge);
+		ChunkStatus edgeStatus = heldStatus(singleplayer, edge);
+		if (edgeStatus == null) {
+			edgeStatus = storedStatus(singleplayer, edge);
+		}
+		assertEquals("status of the chunk generated for the map", ChunkStatus.FEATURES, edgeStatus);
+
 		// 範囲の外を直接頼んでも読み込まない
 		ChunkPos beyond = new ChunkPos(home.x() + TerrainServer.RADIUS + 5, home.z());
-		context.runOnClient(client -> ClientPlayNetworking.send(new TerrainRequest(List.of(beyond.pack()))));
+		context.runOnClient(client -> ClientPlayNetworking.send(new TerrainRequest(List.of(beyond.pack()), List.of(beyond.pack()))));
 		context.waitTicks(40);
 		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, beyond.x(), beyond.z())) != null) {
 			throw new AssertionError("chunks beyond the radius should not be sent");
@@ -700,6 +807,69 @@ public class MinimapClientGameTest implements FabricClientGameTest {
 		zoomAtCenter(context, 3);
 		assertScale(context, 2);
 		toggleMap(context);
+	}
+
+	// 地表に 1 つ積む。Level.getHeight は読み込まれていないチャンクでは一番下を返すので、チャンクから高さを取る
+	private static void raise(ServerLevel level, int x, int z) {
+		int top = level.getChunk(x >> 4, z >> 4).getHeight(Heightmap.Types.WORLD_SURFACE, x, z);
+		level.setBlockAndUpdate(new BlockPos(x, top + 1, z), Blocks.STONE.defaultBlockState());
+	}
+
+	// 置いたチャンクがワールドから外れ、保存し終えるのを待つ（それまではサーバーがメモリの方から送る）。
+	// ここから後にワールドに読み込まれたチャンクを数え直す
+	private static void waitUntilStored(ClientGameTestContext context, TestSingleplayerContext singleplayer, ChunkPos... chunks) {
+		for (int i = 0; ; i++) {
+			String remaining = singleplayer.getServer().computeOnServer(server -> {
+				ChunkMapInvoker chunkMap = (ChunkMapInvoker) server.overworld().getChunkSource().chunkMap;
+				List<String> held = new ArrayList<>();
+				for (ChunkPos chunk : chunks) {
+					ChunkHolder holder = chunkMap.minimap$getVisibleChunkIfPresent(chunk.pack());
+					if (holder != null || chunkMap.minimap$pendingUnloads().containsKey(chunk.pack())) {
+						held.add(chunk + " level=" + (holder == null ? "unloading" : holder.getTicketLevel()));
+					}
+				}
+				return held.isEmpty() ? null : held + " player=" + server.getPlayerList().getPlayers().getFirst().chunkPosition();
+			});
+			if (remaining == null) {
+				break;
+			}
+			if (i >= 1200) {
+				throw new AssertionError("chunks should be saved and unloaded: " + remaining);
+			}
+			context.waitTick();
+		}
+		for (ChunkPos chunk : chunks) {
+			assertEquals("saved status of " + chunk, ChunkStatus.FULL, storedStatus(singleplayer, chunk));
+		}
+		singleplayer.getServer().runOnServer(server -> FULL_LOADS.clear());
+	}
+
+	// メモリにあるチャンクの状態。なければ null。
+	// テストの内蔵サーバーは tick の合間に時間が余らないので、外れたチャンクの保存は溜まった分の 2000 を超えた分しか進まない
+	private static ChunkStatus heldStatus(TestSingleplayerContext singleplayer, ChunkPos chunk) {
+		return singleplayer.getServer().computeOnServer(server -> {
+			ChunkMapInvoker chunkMap = (ChunkMapInvoker) server.overworld().getChunkSource().chunkMap;
+			ChunkHolder holder = chunkMap.minimap$getVisibleChunkIfPresent(chunk.pack());
+			if (holder == null) {
+				holder = chunkMap.minimap$pendingUnloads().get(chunk.pack());
+			}
+			return holder == null || holder.getLatestChunk() == null ? null : holder.getLatestChunk().getPersistedStatus();
+		});
+	}
+
+	// セーブに書かれた状態。なければ null
+	private static ChunkStatus storedStatus(TestSingleplayerContext singleplayer, ChunkPos chunk) {
+		CompletableFuture<Optional<CompoundTag>> tag = singleplayer.getServer().computeOnServer(server -> server.overworld().getChunkSource().chunkMap.read(chunk));
+		return tag.join().map(SerializableChunkData::getChunkStatusFromTag).orElse(null);
+	}
+
+	// 地図のためにワールドへ読み込んでいない（読み込むとエンティティや光の計算まで走る）
+	private static void assertNotLoadedByServer(TestSingleplayerContext singleplayer, ChunkPos chunk) {
+		boolean loaded = singleplayer.getServer().computeOnServer(server -> FULL_LOADS.contains(chunk.pack())
+				|| server.overworld().getChunkSource().getChunkNow(chunk.x(), chunk.z()) != null);
+		if (loaded) {
+			throw new AssertionError("chunk " + chunk + " should not be loaded into the world for the map");
+		}
 	}
 
 	// ClientLevel.hasChunk は常に true を返す

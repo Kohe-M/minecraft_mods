@@ -18,6 +18,9 @@
 			"com.omuraisu.minimap.client.MinimapClient"
 		]
 	},
+	"mixins": [
+		"minimap.mixins.json"
+	],
 	"depends": {
 		"fabricloader": ">=${loader_version}",
 		"minecraft": "~${minecraft_version}",

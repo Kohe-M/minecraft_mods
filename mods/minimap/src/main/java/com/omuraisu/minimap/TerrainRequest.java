@@ -8,14 +8,19 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-// 地形を送ってほしいチャンク（ChunkPos.pack）。先に読み込むものから並べる。
-// 届くたびに前の依頼のうち読み込み始めていないものは取り消す。空なら取り消すだけ
-public record TerrainRequest(List<Long> chunks) implements CustomPacketPayload {
-	public static final int MAX_CHUNKS = 1024;
-	public static final Type<TerrainRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "terrain_request"));
+// 地形がほしいチャンク（ChunkPos.pack）を、先に送ってほしいものから並べる。届くたびに前の依頼を置き換える。
+// read はセーブにあれば送り、なければ TerrainMissing で答える。generate は未生成と答えたチャンクで、サーバーに余裕があるときだけ生成する。
+// どちらも空なら取り消すだけ
+public record TerrainRequest(List<Long> read, List<Long> generate) implements CustomPacketPayload {
+	public static final int MAX_READ = 1024;
+	public static final int MAX_GENERATE = 64;
+	public static final Type<TerrainRequest> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_request"));
 	public static final StreamCodec<RegistryFriendlyByteBuf, TerrainRequest> CODEC = StreamCodec.composite(
-			ByteBufCodecs.LONG.apply(ByteBufCodecs.list(MAX_CHUNKS)), TerrainRequest::chunks,
+			ByteBufCodecs.LONG.apply(ByteBufCodecs.list(MAX_READ)), TerrainRequest::read,
+			ByteBufCodecs.LONG.apply(ByteBufCodecs.list(MAX_GENERATE)), TerrainRequest::generate,
 			TerrainRequest::new);
+
+	public static final TerrainRequest CANCEL = new TerrainRequest(List.of(), List.of());
 
 	@Override
 	public Type<TerrainRequest> type() {

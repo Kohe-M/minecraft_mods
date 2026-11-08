@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import com.omuraisu.minimap.Minimap;
+import com.omuraisu.minimap.TerrainMissing;
 import com.omuraisu.minimap.TerrainTile;
 
 import net.fabricmc.api.ClientModInitializer;
@@ -41,7 +42,8 @@ public class MinimapClient implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "pin_labels"), PinBeams::extractLabels);
 		LevelRenderEvents.COLLECT_SUBMITS.register(PinBeams::submit);
 
-		ClientPlayNetworking.registerGlobalReceiver(TerrainTile.TYPE, (payload, context) -> FAR_TERRAIN.receive(payload));
+		ClientPlayNetworking.registerGlobalReceiver(TerrainTile.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
+		ClientPlayNetworking.registerGlobalReceiver(TerrainMissing.TYPE, (payload, context) -> FAR_TERRAIN.missing(payload));
 		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> FAR_TERRAIN.forget(level.dimension().identifier(), chunk.getPos()));
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
