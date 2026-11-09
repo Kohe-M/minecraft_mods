@@ -2,6 +2,7 @@ package com.omuraisu.minimap.client;
 
 import com.mojang.blaze3d.platform.Window;
 import com.omuraisu.minimap.Minimap;
+import com.omuraisu.minimap.Pin;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -60,7 +61,7 @@ final class MinimapHud {
 
 		graphics.fill(-unit, -unit, size + unit, size + COORDINATES_HEIGHT * unit, FRAME_COLOR);
 		terrain(graphics, left, top, size, unit);
-		for (Pins.Pin pin : MinimapClient.PINS.in(player.level().dimension().identifier())) {
+		for (Pin pin : MinimapClient.PINS.in(player.level().dimension().identifier())) {
 			pin(graphics, pin, left, top, size, unit);
 		}
 		for (PlayerMarkers.Marker marker : PlayerMarkers.collect(client, partialTick)) {
@@ -101,7 +102,7 @@ final class MinimapHud {
 		graphics.blit(TERRAIN.texture, 0, 0, size, size, u, u + span, v, v + span);
 	}
 
-	private static void pin(GuiGraphicsExtractor graphics, Pins.Pin pin, int left, int top, int size, int unit) {
+	private static void pin(GuiGraphicsExtractor graphics, Pin pin, int left, int top, int size, int unit) {
 		int width = MapIcons.PIN_WIDTH * unit;
 		int height = MapIcons.PIN_HEIGHT * unit;
 		float half = size / 2f;

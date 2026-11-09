@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
+import com.omuraisu.minimap.Pin;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -27,7 +28,6 @@ public class MapScreen extends Screen {
 	// これより動かしたらクリックではなくドラッグとして扱う（実ピクセル）
 	private static final double DRAG_THRESHOLD = 4;
 
-	private static final int NAME_MAX_LENGTH = 32;
 	private static final int NAME_BOX_WIDTH = 120;
 	private static final int NAME_BOX_HEIGHT = 18;
 
@@ -44,7 +44,7 @@ public class MapScreen extends Screen {
 	private boolean removing;
 
 	// 名前を入力している間だけ持つ
-	private Pins.Pin editing;
+	private Pin editing;
 	private EditBox nameBox;
 	// 刺したキーの文字が名前に入らないよう、キーを離すまで文字を受け付けない
 	private boolean ignoreTextInput;
@@ -131,8 +131,8 @@ public class MapScreen extends Screen {
 		farTerrain(graphics);
 		terrain(graphics);
 
-		Pins.Pin hovered = nameBox != null ? null : pinAt(mouseX * guiScale, mouseY * guiScale);
-		for (Pins.Pin pin : pins()) {
+		Pin hovered = nameBox != null ? null : pinAt(mouseX * guiScale, mouseY * guiScale);
+		for (Pin pin : pins()) {
 			if (pin.equals(hovered) || pin.equals(editing)) {
 				MapIcons.pin(graphics, tipX(pin), tipY(pin), pinWidth * 5 / 4, pinHeight * 5 / 4, pin.color());
 			} else {
@@ -152,7 +152,7 @@ public class MapScreen extends Screen {
 		graphics.pose().popMatrix();
 
 		// 文字はプレイヤーの GUI スケールに合わせる
-		for (Pins.Pin pin : pins()) {
+		for (Pin pin : pins()) {
 			if (!pin.name().isEmpty() && !pin.equals(editing)) {
 				MapIcons.label(graphics, font, pin.name(), tipX(pin) / guiScale, (tipY(pin) - pinHeight) / guiScale - MapIcons.LABEL_HEIGHT);
 			}
@@ -255,7 +255,7 @@ public class MapScreen extends Screen {
 		return (float) ((world - Math.floor(world / terrain.size) * terrain.size) / terrain.size);
 	}
 
-	private List<Pins.Pin> pins() {
+	private List<Pin> pins() {
 		return MinimapClient.PINS.in(minecraft.level.dimension().identifier());
 	}
 
@@ -275,20 +275,20 @@ public class MapScreen extends Screen {
 		return centerZ + (screenY - minecraft.getWindow().getHeight() / 2.0) / scale();
 	}
 
-	private int tipX(Pins.Pin pin) {
+	private int tipX(Pin pin) {
 		return (int) Math.round(screenX(pin.x() + 0.5));
 	}
 
-	private int tipY(Pins.Pin pin) {
+	private int tipY(Pin pin) {
 		return (int) Math.round(screenY(pin.z() + 0.5));
 	}
 
 	// 重なっているときは手前（後に描く方）を選ぶ
-	private Pins.Pin pinAt(double x, double y) {
+	private Pin pinAt(double x, double y) {
 		int unit = unit();
-		List<Pins.Pin> pins = pins();
+		List<Pin> pins = pins();
 		for (int i = pins.size() - 1; i >= 0; i--) {
-			Pins.Pin pin = pins.get(i);
+			Pin pin = pins.get(i);
 			if (Math.abs(x - tipX(pin)) <= MapIcons.PIN_WIDTH * unit / 2.0
 					&& y <= tipY(pin) && y >= tipY(pin) - MapIcons.PIN_HEIGHT * unit) {
 				return pin;
@@ -303,19 +303,19 @@ public class MapScreen extends Screen {
 			return;
 		}
 		Identifier dimension = minecraft.level.dimension().identifier();
-		Pins.Pin placed = new Pins.Pin(dimension, Mth.floor(worldX(x)), Mth.floor(worldZ(y)));
+		Pin placed = new Pin(dimension, Mth.floor(worldX(x)), Mth.floor(worldZ(y)));
 		MinimapClient.PINS.place(placed);
 		startEditing(placed);
 	}
 
-	private void startEditing(Pins.Pin pin) {
+	private void startEditing(Pin pin) {
 		editing = pin;
 		addNameBox(pin.name());
 	}
 
 	private void addNameBox(String value) {
 		nameBox = new EditBox(font, 0, 0, NAME_BOX_WIDTH, NAME_BOX_HEIGHT, Component.translatable("gui.minimap.pin_name"));
-		nameBox.setMaxLength(NAME_MAX_LENGTH);
+		nameBox.setMaxLength(Pin.NAME_MAX_LENGTH);
 		nameBox.setValue(value);
 		positionNameBox();
 		addRenderableWidget(nameBox);
@@ -407,7 +407,7 @@ public class MapScreen extends Screen {
 		}
 		if (event.button() == InputConstants.MOUSE_BUTTON_RIGHT) {
 			double guiScale = minecraft.getWindow().getGuiScale();
-			Pins.Pin pin = pinAt(event.x() * guiScale, event.y() * guiScale);
+			Pin pin = pinAt(event.x() * guiScale, event.y() * guiScale);
 			if (pin != null) {
 				startEditing(pin);
 			}
@@ -439,7 +439,7 @@ public class MapScreen extends Screen {
 		// ピンの位置を確かめようとして抜かないよう、抜くのは Shift を押しているときだけにする
 		if (removing && dragDistance < DRAG_THRESHOLD) {
 			double guiScale = minecraft.getWindow().getGuiScale();
-			Pins.Pin pin = pinAt(event.x() * guiScale, event.y() * guiScale);
+			Pin pin = pinAt(event.x() * guiScale, event.y() * guiScale);
 			if (pin != null) {
 				MinimapClient.PINS.remove(pin);
 			}

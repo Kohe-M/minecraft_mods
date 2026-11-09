@@ -9,6 +9,7 @@ import java.util.List;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import com.omuraisu.minimap.Minimap;
+import com.omuraisu.minimap.PinList;
 import com.omuraisu.minimap.TerrainMissing;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.TerrainTiles;
@@ -58,6 +59,7 @@ public class MinimapClient implements ClientModInitializer {
 
 		ClientPlayNetworking.registerGlobalReceiver(TerrainTiles.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainMissing.TYPE, (payload, context) -> FAR_TERRAIN.missing(payload));
+		ClientPlayNetworking.registerGlobalReceiver(PinList.TYPE, (payload, context) -> PINS.receive(payload));
 		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> FAR_TERRAIN.forget(level.dimension().identifier(), chunk.getPos()));
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
@@ -132,10 +134,10 @@ public class MinimapClient implements ClientModInitializer {
 				: null;
 	}
 
-	// シングルプレイはセーブの中に置き、ワールドと一緒に移動・削除されるようにする
+	// サーバーに mod がないときにピンを保存するファイル。シングルプレイは内蔵サーバーがセーブの中に保存するので要らない
 	private static Path pinFile(Minecraft client) {
 		if (client.getSingleplayerServer() != null) {
-			return client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).resolve("minimap_pins.txt");
+			return null;
 		}
 		return client.getCurrentServer() != null ? Pins.serverFile(client.getCurrentServer().ip) : null;
 	}

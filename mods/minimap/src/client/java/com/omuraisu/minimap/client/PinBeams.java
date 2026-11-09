@@ -3,6 +3,7 @@ package com.omuraisu.minimap.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.omuraisu.minimap.Minimap;
+import com.omuraisu.minimap.Pin;
 
 import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderContext;
 import net.minecraft.client.DeltaTracker;
@@ -44,7 +45,7 @@ final class PinBeams {
 		PoseStack poseStack = context.poseStack();
 		float bottom = (float) (level.getMinY() - camera.y);
 		float top = (float) (level.getMaxY() + 1 - camera.y);
-		for (Pins.Pin pin : MinimapClient.PINS.in(level.dimension().identifier())) {
+		for (Pin pin : MinimapClient.PINS.in(level.dimension().identifier())) {
 			Vec3 offset = offsetFromCamera(client, pin, camera);
 			float radius = RADIUS * Math.max(1, (float) offset.length() / CONSTANT_RADIUS_DISTANCE);
 			int color = ARGB.color(ALPHA, pin.color());
@@ -65,7 +66,7 @@ final class PinBeams {
 		}
 		Vec3 camera = client.gameRenderer.mainCamera().position();
 		Vec3 forward = new Vec3(client.gameRenderer.mainCamera().forwardVector());
-		for (Pins.Pin pin : MinimapClient.PINS.in(client.level.dimension().identifier())) {
+		for (Pin pin : MinimapClient.PINS.in(client.level.dimension().identifier())) {
 			if (pin.name().isEmpty() || !isLabelInRange(pin, camera)) {
 				continue;
 			}
@@ -85,14 +86,14 @@ final class PinBeams {
 	}
 
 	// 柱は手前に寄せて描くことがあるので、実際の位置で測る
-	private static boolean isLabelInRange(Pins.Pin pin, Vec3 camera) {
+	private static boolean isLabelInRange(Pin pin, Vec3 camera) {
 		double dx = pin.x() + 0.5 - camera.x;
 		double dz = pin.z() + 0.5 - camera.z;
 		return dx * dx + dz * dz <= LABEL_MAX_DISTANCE * LABEL_MAX_DISTANCE;
 	}
 
 	// カメラからピンの柱までの水平の差
-	private static Vec3 offsetFromCamera(Minecraft client, Pins.Pin pin, Vec3 camera) {
+	private static Vec3 offsetFromCamera(Minecraft client, Pin pin, Vec3 camera) {
 		double dx = pin.x() + 0.5 - camera.x;
 		double dz = pin.z() + 0.5 - camera.z;
 		double distance = Math.sqrt(dx * dx + dz * dz);
