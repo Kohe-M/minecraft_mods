@@ -20,24 +20,18 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
 // 1回の長押しの間の連続設置。押した瞬間の設置には手を出さない
 public final class Placement {
 	// 押してからこの間は待つ。軽く押しただけで2個置かれないように、バニラの最初の連続設置に合わせる
 	private static final int FIRST_REPEAT_TICKS = 4;
-	// 自分が置いたブロックの面に続けて置くには、その面の向きへこれだけ動いていること（橋渡し・ジャンプでの塔）
-	private static final double MIN_RETREAT = 0.5;
-	// そのときの置き先は、プレイヤーからこの距離以内
-	private static final double RETREAT_REACH = 1;
 
 	// この長押しで置いた（試した）マス
 	private static final Set<BlockPos> tried = new HashSet<>();
 	// 最初に置いた面の向き。まだ置いていなければ null で、バニラのまま動かす
 	private static Direction face;
-	// 置いてよい層の、face の軸の座標
+	// 置いてよい層の、face の軸の座標。最初に置いたマスで決め、長押しの間は動かさない
 	private static int layer;
-	private static Vec3 lastPlacedFrom;
 	private static int heldTicks;
 
 	private Placement() {
@@ -107,16 +101,18 @@ public final class Placement {
 		if (((BlockItemInvoker) context.getItemInHand().getItem()).placer$getPlacementState(context) == null) {
 			return false;
 		}
-		int offset = (target.get(face.getAxis()) - layer) * face.getAxisDirection().getStep();
-		if (!tried.contains(hit.getBlockPos())) {
-			return offset == 0;
+		// 足元のマスは乗るために置くものなので、層にも当たったブロックにもよらず置く（橋渡し・塔）
+		if (underFeet(player, target)) {
+			return true;
 		}
-		return (offset == 0 || offset == 1) && retreated(player, hit.getDirection(), target);
+		// 自分のブロックに視線が当たっている間は置かない。上や手前へ増えないように
+		return !tried.contains(hit.getBlockPos()) && target.get(face.getAxis()) == layer;
 	}
 
-	private static boolean retreated(LocalPlayer player, Direction side, BlockPos target) {
-		double moved = player.position().subtract(lastPlacedFrom).dot(side.getUnitVec3());
-		return moved >= MIN_RETREAT && player.getBoundingBox().inflate(RETREAT_REACH).intersects(new AABB(target));
+	// 足の下 1 ブロック以内で、体と水平に重なるマス。体と重なるマスは getPlacementState で落ちている
+	private static boolean underFeet(LocalPlayer player, BlockPos target) {
+		AABB box = player.getBoundingBox();
+		return new AABB(box.minX, box.minY - 1, box.minZ, box.maxX, box.minY, box.maxZ).intersects(new AABB(target));
 	}
 
 	public static InteractionResult recordUse(LocalPlayer player, InteractionHand hand, BlockHitResult hit, Supplier<InteractionResult> use) {
@@ -132,12 +128,9 @@ public final class Placement {
 
 		InteractionResult result = use.get();
 
-		if (player.level().getBlockState(target) != before) {
-			if (face == null) {
-				face = side;
-			}
+		if (face == null && player.level().getBlockState(target) != before) {
+			face = side;
 			layer = target.get(face.getAxis());
-			lastPlacedFrom = player.position();
 		}
 		if (face != null) {
 			tried.add(target);

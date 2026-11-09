@@ -48,7 +48,10 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 			testVanillaWhenInactive();
 			testSweep();
 			testWall();
+			testWallStepBack();
+			testJumpBeside();
 			testBridge();
+			testBridgeAfterFloor();
 			testTower();
 			testSlab();
 			testScaffolding();
@@ -175,24 +178,94 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 		assertPlaced(Blocks.OAK_PLANKS, expected);
 	}
 
+	// 壁に張りながら下がっても、置いたブロックの手前へは増えない
+	private void testWallStepBack() {
+		setUp(Items.OAK_PLANKS);
+		singleplayer.getServer().runOnServer(server -> fill(server.overworld(),
+				new BlockPos(-3, FEET_Y, -2), new BlockPos(3, FEET_Y + 3, -2), Blocks.STONE));
+		context.waitTicks(2);
+
+		BlockPos placed = new BlockPos(0, FEET_Y + 2, -1);
+		aim(new Vec3(0.5, FEET_Y + 2.5, -1));
+		holdUse();
+		context.waitTicks(5);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(placed));
+
+		context.getInput().lookAt(180, -90);
+		context.getInput().holdKey(options -> options.keyDown);
+		context.waitTicks(5);
+		context.getInput().releaseKey(options -> options.keyDown);
+		context.waitTicks(5);
+		aim(new Vec3(0.5, FEET_Y + 2.5, 0));
+		context.waitTicks(10);
+		releaseUse();
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(placed));
+	}
+
+	// 置いたブロックの横で跳んで、その上面を見ていても積まれない（置いた床へ飛び乗るとき）
+	private void testJumpBeside() {
+		setUp(Items.OAK_PLANKS);
+		BlockPos placed = new BlockPos(0, FEET_Y, -1);
+		aim(onFloor(0, -1));
+		holdUse();
+		context.waitTicks(5);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(placed));
+
+		// 跳んで足が 0.1 ブロックより上にある間、視線がこのブロックの上面に当たる
+		context.getInput().lookAt(180, 56);
+		context.getInput().holdKey(options -> options.keyJump);
+		context.waitTicks(30);
+		releaseUse();
+		context.getInput().releaseKey(options -> options.keyJump);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(placed));
+	}
+
 	// スニークで後ろへ歩きながらの橋渡し。自分のブロックの面に続けて置ける
 	private void testBridge() {
 		setUp(Items.OAK_PLANKS);
+		removeFloorBehind();
+		holdUse();
+		bridgeBackward("placer-bridge");
+		assertBridge(placed(Blocks.OAK_PLANKS));
+	}
+
+	// 床を敷いている長押しのまま端まで下がっても、そこから橋を架けられる
+	private void testBridgeAfterFloor() {
+		setUp(Items.OAK_PLANKS);
+		removeFloorBehind();
+		BlockPos floor = new BlockPos(-2, FEET_Y, -2);
+		aim(onFloor(-2, -2));
+		holdUse();
+		context.waitTicks(5);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(floor));
+
+		bridgeBackward("placer-bridge-after-floor");
+		Set<BlockPos> placed = placed(Blocks.OAK_PLANKS);
+		if (!placed.remove(floor)) {
+			throw new AssertionError("floor should stay but was " + placed);
+		}
+		assertBridge(placed);
+	}
+
+	private void removeFloorBehind() {
 		singleplayer.getServer().runOnServer(server -> fill(server.overworld(),
 				new BlockPos(-AREA, FLOOR_Y, 1), new BlockPos(AREA, FLOOR_Y, AREA), Blocks.AIR));
 		context.waitTicks(2);
+	}
 
+	// 使うキーは押したまま呼ぶ
+	private void bridgeBackward(String screenshot) {
 		context.getInput().lookAt(180, 81);
 		context.getInput().holdKey(options -> options.keyShift);
 		context.getInput().holdKey(options -> options.keyDown);
-		holdUse();
 		context.waitTicks(100);
 		releaseUse();
 		context.getInput().releaseKey(options -> options.keyDown);
-		context.takeScreenshot("placer-bridge");
+		context.takeScreenshot(screenshot);
 		context.getInput().releaseKey(options -> options.keyShift);
+	}
 
-		Set<BlockPos> placed = placed(Blocks.OAK_PLANKS);
+	private static void assertBridge(Set<BlockPos> placed) {
 		if (placed.size() < 4) {
 			throw new AssertionError("bridge should grow but was " + placed);
 		}
