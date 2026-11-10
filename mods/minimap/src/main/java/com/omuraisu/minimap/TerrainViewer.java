@@ -85,9 +85,10 @@ final class TerrainViewer {
 		return session == snapshot.session();
 	}
 
-	// 結果の色を、クライアントに送って持っている版として覚えてよいか。次元を移った後なら捨てる
+	// 結果の色を、クライアントに送って持っている版として覚えてよいか。次元を移った後か、天井のある次元で足元の高さが変わって
+	// 送り直している（moveFeet）なら捨てる。捨てたチャンクは待っているチャンクから外れるので、次の一巡で今の状態から作り直す
 	boolean accepts(Snapshot snapshot) {
-		return session == snapshot.session();
+		return session == snapshot.session() && feetY == snapshot.feetY();
 	}
 
 	// 違う次元のことを知らせてきたら、前の次元のことはすべて忘れる（クライアントも知らせ直す）
