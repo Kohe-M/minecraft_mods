@@ -101,7 +101,7 @@ public final class TerrainColors {
 		for (int dx = 0; dx < 16; dx++) {
 			southEdge[dx] = (short) previous[dx];
 		}
-		return new TerrainTile(pos.pack(), colors, northEdge, southEdge);
+		return new TerrainTile(pos.pack(), 0, colors, northEdge, southEdge);
 	}
 
 	// 北と比べる前の色（明るさは NORMAL。流体は深さで決めた明るさ）と、北と比べる高さを 1 つにまとめる

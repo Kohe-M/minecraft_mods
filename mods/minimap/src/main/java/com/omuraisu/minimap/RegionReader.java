@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -24,6 +25,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.storage.RegionFileVersion;
 
 // リージョンファイル（.mca）を、vanilla の IO スレッドを通さずに自前のスレッドから読む。どのスレッドから同時に呼んでもよい。
+// ヘッダーだけ読めば、どのチャンクがあるかと、それぞれをいつ書いたかがリージョン 1 つ分まとめて分かる。
 // vanilla が同時に書いていることがあるので、読めないもの・別のチャンクの中身・別の版のデータは「読めなかった」として返し、
 // 呼ぶ側が vanilla の経路で読み直す。展開と読み解きは呼んだスレッドで行い、色に要る項目だけを読む
 final class RegionReader implements AutoCloseable {
@@ -42,24 +44,38 @@ final class RegionReader implements AutoCloseable {
 		this.folder = folder;
 	}
 
-	// 生成済みのチャンクの中身。セーブになければ ABSENT、ここでは読めなければ null
-	CompoundTag read(ChunkPos pos) {
+	// リージョンのヘッダー。ファイルがなければ EMPTY、読めなければ null
+	Header header(int regionX, int regionZ) {
+		try {
+			FileChannel channel = channel(regionX, regionZ);
+			if (channel == null) {
+				return Header.EMPTY;
+			}
+			ByteBuffer data = ByteBuffer.allocate(2 * SECTOR_BYTES);
+			if (!readFully(channel, data, 0)) {
+				// 作ったばかりで、まだヘッダーを書き終えていない
+				return Header.EMPTY;
+			}
+			int[] offsets = new int[TerrainRegions.COUNT];
+			int[] stamps = new int[TerrainRegions.COUNT];
+			for (int i = 0; i < offsets.length; i++) {
+				offsets[i] = data.getInt(i * 4);
+				// 書いた時刻のないチャンクも「ある」と分かるよう、0 にはしない
+				stamps[i] = offsets[i] == 0 ? 0 : Math.max(1, data.getInt(SECTOR_BYTES + i * 4) & Integer.MAX_VALUE);
+			}
+			return new Header(offsets, stamps);
+		} catch (IOException | RuntimeException e) {
+			return null;
+		}
+	}
+
+	// 生成済みのチャンクの中身。offset はヘッダーにあった場所（0 ではない）。ここでは読めなければ null
+	CompoundTag read(ChunkPos pos, int offset) {
 		try {
 			FileChannel channel = channel(pos.getRegionX(), pos.getRegionZ());
-			if (channel == null) {
-				return ABSENT;
-			}
-			ByteBuffer header = ByteBuffer.allocate(4);
-			if (!readFully(channel, header, (long) (pos.getRegionLocalX() + pos.getRegionLocalZ() * 32) * 4)) {
-				return null;
-			}
-			int offset = header.getInt(0);
-			if (offset == 0) {
-				return ABSENT;
-			}
 			int sector = offset >>> 8 & 0xFFFFFF;
 			int sectors = offset & 0xFF;
-			if (sector < 2 || sectors == 0) {
+			if (channel == null || sector < 2 || sectors == 0) {
 				return null;
 			}
 			ByteBuffer data = ByteBuffer.allocate(sectors * SECTOR_BYTES);
@@ -153,8 +169,15 @@ final class RegionReader implements AutoCloseable {
 		}
 	}
 
-	// セーブにないことを表す（null は「ここでは読めなかった」）
-	static final CompoundTag ABSENT = new CompoundTag();
+	// リージョンの中の番号（TerrainRegions.index）ごとの、チャンクの中身の場所（0 はない）と版（ないチャンクは 0、あるチャンクは正）。
+	// 版はチャンクを書いた時刻（秒）で、書き直されると変わる
+	record Header(int[] offsets, int[] stamps) {
+		static final Header EMPTY = new Header(new int[TerrainRegions.COUNT], new int[TerrainRegions.COUNT]);
+
+		boolean sameAs(Header other) {
+			return Arrays.equals(offsets, other.offsets) && Arrays.equals(stamps, other.stamps);
+		}
+	}
 
 	// 一番上の DataVersion・xPos・zPos・Status と、sections の各要素の Y・block_states だけを読む。
 	// 光やバイオーム、エンティティは読み飛ばして作らない

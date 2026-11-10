@@ -10,12 +10,13 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.PinList;
-import com.omuraisu.minimap.TerrainMissing;
+import com.omuraisu.minimap.TerrainPreview;
+import com.omuraisu.minimap.TerrainRemoved;
 import com.omuraisu.minimap.TerrainServer;
+import com.omuraisu.minimap.TerrainStamps;
 import com.omuraisu.minimap.TerrainTiles;
 
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
@@ -34,7 +35,7 @@ public class MinimapClient implements ClientModInitializer {
 	public static final FarTerrain FAR_TERRAIN = new FarTerrain();
 
 	public static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("minimap.txt");
-	// マップ距離（チャンク）。マップ画面を開いていない間も、この範囲の地形をサーバーに頼んでおく。0 なら開いたときだけ頼む。
+	// マップ距離（チャンク）。マップ画面を開いていない間も、この範囲の地形をサーバーから受け取っておく。0 なら開いたときだけ受け取る。
 	// 既定は、1080p で開いた地図を 1 段引いた（1 ブロック 2 画素）画面が収まる広さ。広げるほど、遊んでいる間に生成してセーブが増える
 	public static final int DEFAULT_MAP_DISTANCE = 32;
 	private static int mapDistance = DEFAULT_MAP_DISTANCE;
@@ -58,9 +59,10 @@ public class MinimapClient implements ClientModInitializer {
 		LevelRenderEvents.COLLECT_SUBMITS.register(PinBeams::submit);
 
 		ClientPlayNetworking.registerGlobalReceiver(TerrainTiles.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
-		ClientPlayNetworking.registerGlobalReceiver(TerrainMissing.TYPE, (payload, context) -> FAR_TERRAIN.missing(payload));
+		ClientPlayNetworking.registerGlobalReceiver(TerrainStamps.TYPE, (payload, context) -> FAR_TERRAIN.stamps(payload));
+		ClientPlayNetworking.registerGlobalReceiver(TerrainRemoved.TYPE, (payload, context) -> FAR_TERRAIN.removed(payload));
+		ClientPlayNetworking.registerGlobalReceiver(TerrainPreview.TYPE, (payload, context) -> FAR_TERRAIN.preview(payload));
 		ClientPlayNetworking.registerGlobalReceiver(PinList.TYPE, (payload, context) -> PINS.receive(payload));
-		ClientChunkEvents.CHUNK_LOAD.register((level, chunk) -> FAR_TERRAIN.forget(level.dimension().identifier(), chunk.getPos()));
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			PINS.open(pinFile(client));
@@ -89,7 +91,7 @@ public class MinimapClient implements ClientModInitializer {
 		while (mapKey.consumeClick()) {
 			client.gui.setScreen(new MapScreen());
 		}
-		// 開いている間はマップ画面が頼む
+		// 開いている間はマップ画面が見ている範囲を知らせる
 		if (!(client.gui.screen() instanceof MapScreen)) {
 			FAR_TERRAIN.tickBackground(client, client.level.dimension().identifier(), client.player.chunkPosition(), mapDistance);
 		}

@@ -10,9 +10,9 @@ import net.minecraft.resources.Identifier;
 
 // 同じ次元のチャンクの地形の色をまとめて送る。1 つずつ送るよりパケットの数と圧縮の手間が減る
 public record TerrainTiles(Identifier dimension, List<TerrainTile> tiles) implements CustomPacketPayload {
-	// 1 つのパケットに入れる数。1 チャンク 330 バイトほど
+	// 1 つのパケットに入れる数。1 チャンク 330 バイトほど（32 KiB 未満に収める）
 	public static final int MAX_TILES = 64;
-	public static final Type<TerrainTiles> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v3/tiles"));
+	public static final Type<TerrainTiles> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v4/tiles"));
 	public static final StreamCodec<FriendlyByteBuf, TerrainTiles> CODEC = CustomPacketPayload.codec(TerrainTiles::write, TerrainTiles::read);
 
 	private static TerrainTiles read(FriendlyByteBuf buf) {
