@@ -19,6 +19,9 @@ def minecraftClients = gradle.sharedServices.registerIfAbsent("minecraftClients"
 // 起動の途中で止まったクライアントを待ち続けない。-PclientTimeout=分 で変えられる
 def clientTimeout = Duration.ofMinutes(providers.gradleProperty("clientTimeout").map { it as long }.getOrElse(10L))
 
+// -Pscenarios=hud,map で、クライアントのゲームテストを名前の合うシナリオ（testkit の Scenario）だけにする
+def scenarios = providers.gradleProperty("scenarios").getOrElse("")
+
 subprojects {
 	apply plugin: 'net.fabricmc.fabric-loom'
 
@@ -78,6 +81,7 @@ subprojects {
 	tasks.matching { it.name == "runClientGameTest" }.configureEach {
 		usesService(minecraftClients)
 		timeout = clientTimeout
+		systemProperty "testkit.scenarios", scenarios
 	}
 
 	jar {
