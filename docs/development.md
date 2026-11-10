@@ -1,0 +1,102 @@
+# 開発の手順
+
+エージェントも人も、入口は `python tools/dev.py` にそろえる。決まりごと（コミット・ブランチ・タグ）は [AGENTS.md](../AGENTS.md)。
+
+## 準備を確かめる（doctor）
+
+```bash
+python tools/dev.py doctor
+```
+
+| 項目 | なければ |
+|---|---|
+| Python 3.8 以上 | 入れる |
+| Pillow | 任意。スクリーンショットの一覧の画像を作らない（HTML は作る） |
+| git と、test の比べる先（上流のブランチ。なければ `origin/main`） | `test --base <ref>` で比べる先を指定する |
+| gradlew を起動する Java（`JAVA_HOME` か PATH の `java`。どの版でもよい） | 入れる |
+| JDK 25（Gradle のデーモンとコンパイル。`gradle/gradle-daemon-jvm.properties` と `java_version`） | 入れる。インストール済みのものを Gradle が自動で探す |
+| Gradle デーモンの文字コードが UTF-8（`gradle.properties` の `org.gradle.jvmargs`） | 足す。下の「文字コード」 |
+
+## テスト（test）
+
+```bash
+python tools/dev.py test --plan              # 何をなぜ走らせるかだけ出す
+python tools/dev.py test                     # 上流のブランチから変わった mod
+python tools/dev.py test minimap --scenario map   # クライアントのゲームテストをシナリオで絞る
+python tools/dev.py test --all --no-sodium   # 全 mod をバニラ描画で
+```
+
+- 対象は、比べる先からの差分・コミットしていない変更・追跡していないファイルで決める
+  - `mods/<mod>/` が変わった mod。中の mod が変われば jori も
+  - ルートのビルド設定（`build.gradle`・`settings.gradle`・`gradle.properties`・`gradle/`）と `testkit/` が変わったら全 mod
+  - `docs/`・README・`tools/` だけの変更では何も走らせない
+  - 比べる先が見つからないときは止まる（差分なしとして成功にはしない）
+- 合否は Gradle の終了コードとタスクの結果で決める。ログは失敗の中身を出すのに使う
+  - mod のビルドは `:<mod>:build` が走って失敗していないときだけ OK。走らなかったら「走らず」で NG
+  - Gradle がタスクの外（設定の段階・デーモンの起動など）で失敗したら、「What went wrong」を出して NG
+  - 時間切れのクライアントだけを 1 つずつ走らせ直し、その回の結果だけで決める。テストの失敗は走らせ直さない
+  - 最後に、check と同じソースどうしの食い違い（言語ファイルのキー・jori の一覧など）も確かめ、あれば NG
+- `--scenario` は `-Pscenarios=...` になり、testkit の `Scenario` が名前の合わないシナリオを飛ばす。修正の途中は関わるシナリオだけを回し、コミットの前にはシナリオを付けずに走らせる。シナリオの名前は `docs/mods/<mod>.md` のゲームテストの節にある
+
+### 結果の見方
+
+| ファイル | 中身 |
+|---|---|
+| 画面の最後 | mod ごとに 1 行。失敗なら例外とこのリポジトリのスタックの行 |
+| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成・Gradle の各回の終了コードとタスクの結果・mod ごとの結果・成果物の場所。直近の 30 回を残す |
+| `build/dev/report.html` | 結果の表とすべてのスクリーンショット（人が見る用） |
+| `build/dev/sheets/<mod>-<n>.png` | スクリーンショットを 20 枚ずつ並べた画像。見た目はまずこれを Read する |
+| `build/dev/gradle.log` | Gradle の出力すべて（各回の終わりに終了コード） |
+| `mods/<mod>/build/run/clientGameTest/logs/latest.log` | クライアントのゲームテストのゲームのログ |
+| `mods/<mod>/build/run/gameTest/logs/latest.log` | サーバーのゲームテストのゲームのログ |
+
+前の結果を引き継ぐときは、`last-run.json` の `commit` と `uncommitted` がいまの作業と同じかを先に見る。
+
+### 失敗したとき
+
+| 結果 | 見るところ |
+|---|---|
+| ビルド NG compileJava など | 画面のコンパイルエラーの行。なければ `gradle.log` |
+| ビルド NG runGameTest | サーバーのゲームのログの `failed!` の行 |
+| クライアント NG | 画面の例外とスタック。足りなければクライアントのゲームのログ |
+| クライアント 時間切れ | 走らせ直しでも時間切れなら、ゲームのログの最後の行で止まった場所 |
+| 走らず | 依存するタスクの失敗か、Gradle がタスクの外で失敗している。画面の「gradle がタスクの外で失敗した」と `gradle.log` |
+
+## 食い違いの検査（check）
+
+```bash
+python tools/dev.py check            # ソースと、いまある jar
+python tools/dev.py check --build    # jar を作ってから
+```
+
+- ソース: `fabric.mod.json` の id と version、`en_us.json` と `ja_jp.json` のキーがそろっている、アイコンが 128 × 128、`docs/mods/<mod>.md` と README の表に載っている、jori の `modules`・`JoriClient.FEATURES`・`jori.description.<mod>` が mod の一覧と合う
+- jar: `fabric.mod.json` が UTF-8 として読め、置換文字や埋めていない `${...}` がなく、id・版・名前・説明が元と同じ。jori は同梱の一覧が `modules` の今の版と合い、同梱した各 jar の中身も同じように見る
+- release は jar を作った後にこれを走らせ、食い違いがあればコミットもタグも作らない
+
+## リリース（status・release）
+
+```bash
+python tools/dev.py status                              # 最後のタグの後にリリースしていない変更
+python tools/dev.py release sorter minor --dry-run       # 何を上げるかだけ
+python tools/dev.py release sorter minor --trailer "Co-Authored-By: ..." --push
+python tools/dev.py release fullbright port minimap port # MC の移植。版はそのままでタグだけ
+```
+
+- status は、HEAD の祖先にある、いまの MC（`gradle.properties` の `minecraft_version`）のタグと比べる。旧 MC の保守ブランチでも、そのブランチの MC のタグを見る。いまの MC のタグがない mod は「移植だけなら release <mod> port」と出す
+- release の順番
+  1. 上げる mod・版・タグを先に決める（jori は中の mod の後。タグが既にあれば止まる）
+  2. 版を書き換えた状態で jar を作り（`:<mod>:assemble`）、check の jar の検査をする
+  3. 通ったら mod ごとにコミットしてタグを付ける。port の mod はいまのコミットにタグだけ付ける
+- 2 で失敗したら版を元に戻して止まる。コミットもタグも残らないので、直してから同じコマンドをもう一度走らせればよい
+- 配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar`。版を上げたコミットと jar の中身は同じ（jar を作ってからコミットまでに変わるのは、ほかの mod の `gradle.properties` だけ）
+
+## クライアントのゲームテストの分け方
+
+- 1 つの mod のテストが長くなったら、ほかと独立して走らせられるシナリオ（testkit の `Scenario`）に分ける。シナリオは自分でワールドを作り、前のシナリオの状態に頼らない
+- gametest の `fabric.mod.json` の `fabric-client-gametest` にシナリオのクラスを並べる。Fabric はシナリオごとに、ゲームの設定・押しているキー・ウィンドウの大きさを戻し、タイトル画面に戻っているかを確かめる。どれかが失敗したらそこで止まる
+- シナリオに共通の道具はその mod のテストのパッケージに置く（minimap は `MapTests`）。ほかの mod でも使うものは testkit に置く
+
+## 文字コード
+
+- `JAVA_HOME` が JDK 8 などだと、Gradle はデーモンにも同じ既定の文字コード（Windows では MS932）を渡す。Loom が jori の `fabric.mod.json` に同梱の一覧を書き足すときにこれを使い、日本語の説明が化けた（jori 1.9.0 の jar で見つかった）。`gradle.properties` の `org.gradle.jvmargs` に `-Dfile.encoding=UTF-8` を入れて防ぐ
+- javac やゲームの出力は、それでも OS の文字コードのことがある。dev.py は UTF-8 で読めない行を cp932 で読む

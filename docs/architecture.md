@@ -8,7 +8,7 @@ minecraft_mods/
 ├─ build.gradle         全 mod 共通のビルド設定（subprojects）
 ├─ settings.gradle      mod の登録
 ├─ gradle/gradle-daemon-jvm.properties  Gradle を動かす JDK（25）
-├─ tools/dev.py         テスト・スクリーンショットの一覧・リリース
+├─ tools/dev.py         準備の確認・テスト・食い違いの検査・リリース（docs/development.md）
 ├─ testkit/java/        全 mod の gametest に一緒にコンパイルする道具
 ├─ docs/                仕様と仕組み
 └─ mods/<mod>/
@@ -35,6 +35,7 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 
 - サーバーのゲームテスト（`enableGameTests`）は sorter と timber。`./gradlew build` で走る
 - ほかはクライアントのゲームテスト（`enableClientGameTests`、`runClientGameTest`）。ルートの `build.gradle` の BuildService（`minecraftClients`）で同時に起動する数を絞り、時間切れを付ける
+- 長いクライアントのゲームテストは、testkit の `Scenario` で独立したシナリオに分ける。`-Pscenarios=a,b` をルートの `build.gradle` がシステムプロパティ `testkit.scenarios` にして渡し、名前の合わないシナリオは飛ばす（[development.md](development.md)）
 
 ## mod の形
 

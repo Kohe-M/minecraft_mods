@@ -17,7 +17,7 @@
 
 ## 構成
 
-`mods/<mod>` に mod ごとの Gradle プロジェクトを置く。構成と仕組みは [docs/architecture.md](docs/architecture.md)、mod ごとの仕様は [docs/mods/](docs/mods/)。開発の決まりごとは [AGENTS.md](AGENTS.md)。
+`mods/<mod>` に mod ごとの Gradle プロジェクトを置く。構成と仕組みは [docs/architecture.md](docs/architecture.md)、mod ごとの仕様は [docs/mods/](docs/mods/)、開発の手順は [docs/development.md](docs/development.md)。開発の決まりごとは [AGENTS.md](AGENTS.md)。
 
 成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。リリース（`python tools/dev.py release`）すると `mods/<mod>/build/libs/` にできる。
 
@@ -43,8 +43,8 @@ git branch mc/26.3 && git push -u origin mc/26.3
 ```
 
 1. ルートの `gradle.properties` を新しいバージョンに書き換える
-2. `./gradlew build` が通るまで各 mod を直す
-3. 各 mod の `mod_version` を上げてコミット・タグ付け
+2. `python tools/dev.py test --all` が通るまで各 mod を直してコミットする
+3. `python tools/dev.py release <mod> port ...` で、`mod_version` は変えずに新しい MC のタグを付ける（`<mod>/<mod_version>+<MC>`）
 
 旧バージョンの修正は `mc/<MC>` で行い、必要なら `main` に cherry-pick する。
 
@@ -53,7 +53,9 @@ git branch mc/26.3 && git push -u origin mc/26.3
 JDK 25 が入っていれば、`JAVA_HOME` はどの JDK でもよい。
 
 ```bash
+python tools/dev.py doctor          # 開発に要るものがそろっているか
 python tools/dev.py test            # 変えた mod のビルドとゲームテスト。結果は build/dev/report.html
+python tools/dev.py check --build   # jar を作り、ソースと jar の食い違いを確かめる
 python tools/dev.py status          # リリースしていない変更
 python tools/dev.py release sorter minor
 ./gradlew :xray:runClient

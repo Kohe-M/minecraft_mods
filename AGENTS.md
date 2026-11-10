@@ -10,6 +10,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 |---|---|
 | [README.md](README.md) | mod の一覧と、クライアント・サーバーのどちらに入れるか |
 | [docs/architecture.md](docs/architecture.md) | ディレクトリとビルドの構成、mod に共通の作り |
+| [docs/development.md](docs/development.md) | dev.py の使い方、結果の見方、失敗したときに見るところ、リリースの順番 |
 | [docs/minecraft.md](docs/minecraft.md) | いまの MC バージョンの API の癖 |
 | `docs/mods/<mod>.md` | mod ごとの仕様と仕組み |
 
@@ -43,10 +44,10 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 
 エージェントが自律的に作業し、動くものを仕上げて push まで行う。途中でユーザーに確認しない。
 
-1. 実装する
-2. `python tools/dev.py test` で、変更した mod のビルドとゲームテスト（server・client）を通す
+1. 実装する。修正の途中は `python tools/dev.py test <mod> --scenario <名前>` で関わるシナリオだけを回してよい
+2. `python tools/dev.py test` で、変更した mod のビルドとゲームテスト（server・client）を通す。シナリオで絞らずに走らせる
 3. コミットメッセージのルールに沿ってコミットする
-4. リリースするなら `python tools/dev.py release <mod> <patch|minor|major>` で版を上げてタグを付け、jar を作る（下の「タグ」）
+4. リリースするなら `python tools/dev.py release <mod> <patch|minor|major>` で jar を作って確かめ、版を上げてタグを付ける（下の「タグ」）
 5. `git push --follow-tags` で、今いるブランチとタグを push する
 
 - テストが通らない、不具合が見つかったときは、報告で止めずに原因を調べて直し、テストが通るまで繰り返す
@@ -61,13 +62,14 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 - `<mod>/<mod_version>+<MC>`（例: `sorter/1.0.0+26.3`）の注釈付きタグ
 - `mod_version` を上げたコミット、または MC 移植を終えたコミットに付ける
 - `python tools/dev.py release sorter minor timber patch` で、版を上げるコミット（`chore(<mod>): <版> をリリース`）とタグをまとめて作る
+  - 先に版を書き換えた状態で jar を作り（`:<mod>:assemble`。テストは `dev.py test` で済ませているので走らせない）、`dev.py check` と同じ検査をしてから、コミットしてタグを付ける。失敗したら版を元に戻すので、直して同じコマンドを走らせ直せばよい
+  - CI はないので、配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar` のこれ
   - jori に入っている mod を上げると、jori も一番大きい上げ方で一緒に上げる（`--no-bundle` で止める）
   - エージェントは `--trailer "Co-Authored-By: ..."` でコミットの末尾の行を足す。`--push` で push まで、`--dry-run` で何が上がるかだけ見る
-  - 最後に、上げた mod の jar をタグの状態で作る（`:<mod>:assemble`。テストは `dev.py test` で済ませているので走らせない）。CI はないので、配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar` のこれ。ビルドに失敗したら push しない
   - jori は中の mod を上げた後のコミットにタグを付ける。jori のタグと jar に、上げた後の中の mod が入るようにするため
   - 追跡していないファイルが `mods/` や共通の設定にあると、jar に入ってタグと食い違うので止まる（ゲームテストのソースは jar に入らないので除く）
-- MC 移植のタグを手で付けたときは、そのコミットで `./gradlew assemble` を走らせて jar を作る
-- `python tools/dev.py status` で、最後のタグの後にリリースしていない変更がある mod が分かる
+- MC の移植は版を変えずに `python tools/dev.py release <mod> port ...` でタグを付ける（jar も作る）
+- `python tools/dev.py status` で、最後のタグ（HEAD の祖先にある、いまの MC のもの）の後にリリースしていない変更がある mod が分かる
 
 ## コミットメッセージ
 
@@ -108,21 +110,27 @@ build: Fabric API を 0.166.0+26.3 に更新
 `JAVA_HOME` はどの JDK でもよい（いまは JDK 8 を指している）。Gradle のデーモンは `gradle/gradle-daemon-jvm.properties` の JDK 25 を、インストール済みの JDK から自動で探して使う。
 
 ```bash
+python tools/dev.py doctor               # JDK・Python・Gradle などがそろっているか
+python tools/dev.py test --plan          # 何をなぜ走らせるかだけ出す
 python tools/dev.py test                 # 上流のブランチから変わった mod を、ビルド + server・client のゲームテスト
 python tools/dev.py test sorter jori     # mod を指定する
+python tools/dev.py test minimap --scenario map   # クライアントのゲームテストをシナリオで絞る
 python tools/dev.py test --all           # 全 mod
 python tools/dev.py test --no-sodium     # Sodium / Iris を入れずにバニラ描画で
+python tools/dev.py check --build        # jar を作り、ソースと jar の食い違い（言語ファイル・jori の同梱・文字化け）を確かめる
 python tools/dev.py shots                # いまあるスクリーンショットを一覧にまとめ直す
 ./gradlew build                          # ビルド + server ゲームテスト（sorter, timber）
 ./gradlew runClientGameTest              # 全 mod の client ゲームテスト
 ./gradlew :xray:runClient                # -PnoSodium でバニラ描画
 ```
 
-- `dev.py test` は、jori に入っている mod が変わったら jori も走らせる。ルートのビルド設定（`build.gradle` など）が変わったら全 mod
-- 結果は最後に mod ごとに 1 行で出る。失敗したら、例外とこのリポジトリのスタックの行も出す
+- `dev.py test` は、jori に入っている mod が変わったら jori も走らせる。ルートのビルド設定（`build.gradle` など）と `testkit/` が変わったら全 mod
+- 合否は Gradle の終了コードとタスクの結果で決める。結果は最後に mod ごとに 1 行で出る。失敗したら、例外とこのリポジトリのスタックの行も出す
+  - `build/dev/last-run.json`: 実行の記録（コミット・対象と選んだわけ・各回の結果・成果物の場所）。前の結果を引き継ぐときは、まずこれのコミットを確かめる
   - `build/dev/report.html`: 結果の表とすべてのスクリーンショット（人が見る用）
   - `build/dev/sheets/<mod>-<n>.png`: スクリーンショットを 20 枚ずつ 1 枚に並べた画像。見た目はまずこれを Read して確かめる
   - `build/dev/gradle.log`: gradle の出力すべて
+  - 失敗の種類ごとに見るところは [docs/development.md](docs/development.md)
 - client ゲームテストは同時に 3 つまで起動する（`-PclientSlots=N`）。一度に多く起動すると、どれかが起動の途中で止まることがあるため
 - 1 つが 10 分を超えたら止める（`-PclientTimeout=分`）。`dev.py test` は時間切れのものだけ 1 つずつ走らせ直す。テストの失敗は走らせ直さない
 - Python 3 と、一覧の画像に Pillow を使う（なければ画像は作らず HTML だけ）
@@ -137,6 +145,7 @@ python tools/dev.py shots                # いまあるスクリーンショッ�
 | `Widgets.click(context, "文字")` / `hover` | 画面のボタンなどを表示している文字で探し、実際のマウスで押す・カーソルを置く |
 | `Screenshots.read(path, image -> ...)` | `takeScreenshot` の画像の画素を読む |
 | `Asserts.assertEquals(名前, 期待, 実際)` | 何を比べていたかが分かる失敗にする |
+| `Scenario` | クライアントのゲームテストを、独立して走らせられるシナリオに分ける（`--scenario` で絞る） |
 
 ## mod の作り方
 
