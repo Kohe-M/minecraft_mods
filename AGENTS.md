@@ -47,7 +47,10 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 1. 実装する。修正の途中は `python tools/dev.py test <mod> --scenario <名前>` で関わるシナリオだけを回してよい
 2. `python tools/dev.py test` で、変更した mod のビルドとゲームテスト（server・client）を通す。シナリオで絞らずに走らせる
 3. コミットメッセージのルールに沿ってコミットする
-4. リリースするなら `python tools/dev.py release <mod> <patch|minor|major>` で jar を作って確かめ、版を上げてタグを付ける（下の「タグ」）
+4. mod を変更したら、変更した mod と、それを同梱する jori の jar をローカルで作って確かめる
+   - 通常は `python tools/dev.py check --build` に対象の mod 名を渡す（例: `python tools/dev.py check --build minimap jori`）
+   - リリースする場合は `python tools/dev.py release <mod> <patch|minor|major>` を使う（下の「タグ」）
+   - 完了報告に `mods/<mod>/build/libs/` にできた jar のパスを載せる
 5. `git push --follow-tags` で、今いるブランチとタグを push する
 
 - テストが通らない、不具合が見つかったときは、報告で止めずに原因を調べて直し、テストが通るまで繰り返す
