@@ -13,7 +13,7 @@ import com.omuraisu.jori.Feature;
 import com.omuraisu.jori.JoriConfig;
 import com.omuraisu.jori.client.JoriClient;
 import com.omuraisu.jori.client.JoriScreen;
-import com.omuraisu.minimap.TerrainRequest;
+import com.omuraisu.minimap.TerrainView;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.peek.client.ShulkerPreview;
 import com.omuraisu.sorter.SortPayload;
@@ -174,7 +174,7 @@ public class JoriClientGameTest implements FabricClientGameTest {
 	}
 
 	private static void assertCanSend(ClientGameTestContext context, boolean expected) {
-		for (CustomPacketPayload.Type<?> type : List.of(SortPayload.TYPE, TerrainRequest.TYPE, TogglePayload.TYPE)) {
+		for (CustomPacketPayload.Type<?> type : List.of(SortPayload.TYPE, TerrainView.TYPE, TogglePayload.TYPE)) {
 			assertEquals("can send " + type.id(), expected, context.computeOnClient(client -> ClientPlayNetworking.canSend(type)));
 		}
 	}
