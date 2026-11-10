@@ -6,7 +6,11 @@
 	"environment": "*",
 	"entrypoints": {
 		"fabric-client-gametest": [
-			"com.omuraisu.minimap.test.MinimapClientGameTest"
+			"com.omuraisu.minimap.test.HudTest",
+			"com.omuraisu.minimap.test.MapScreenTest",
+			"com.omuraisu.minimap.test.ServerTest",
+			"com.omuraisu.minimap.test.FarTerrainTest",
+			"com.omuraisu.minimap.test.TerrainLoadTest"
 		]
 	},
 	"depends": {
