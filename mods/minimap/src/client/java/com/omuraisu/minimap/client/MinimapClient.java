@@ -8,6 +8,7 @@ import java.util.List;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
+import com.omuraisu.minimap.MapPlayerPositions;
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.PinList;
 import com.omuraisu.minimap.TerrainPreview;
@@ -62,6 +63,11 @@ public class MinimapClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(TerrainStamps.TYPE, (payload, context) -> FAR_TERRAIN.stamps(payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainRemoved.TYPE, (payload, context) -> FAR_TERRAIN.removed(payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainPreview.TYPE, (payload, context) -> FAR_TERRAIN.preview(payload));
+		ClientPlayNetworking.registerGlobalReceiver(MapPlayerPositions.TYPE, (payload, context) -> {
+			if (context.client().gui.screen() instanceof MapScreen map) {
+				map.receivePlayerPositions(payload);
+			}
+		});
 		ClientPlayNetworking.registerGlobalReceiver(PinList.TYPE, (payload, context) -> PINS.receive(payload));
 
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {

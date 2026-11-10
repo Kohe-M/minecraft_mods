@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.mojang.logging.LogUtils;
 import com.omuraisu.minimap.TerrainViewer.RegionView;
 import com.omuraisu.minimap.mixin.ChunkMapInvoker;
+import com.omuraisu.minimap.mixin.ServerWaypointManagerAccessor;
 
 import org.slf4j.Logger;
 
@@ -42,6 +43,8 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ImposterProtoChunk;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.waypoints.WaypointTransmitter;
 
 // マップ画面に描画距離の外を出すため、地形の色を送る。地図のためにチャンクをワールドへ読み込まない。
 // クライアントは見ている範囲（TerrainView）と、リージョンごとに持っている色の版（TerrainHave）を知らせるだけで、
@@ -67,6 +70,7 @@ public final class TerrainServer {
 	private static final int SCAN_PER_TICK = 8192;
 	private static final int PASS_TICKS = 20;
 	private static final int BACKGROUND_PASS_TICKS = 40;
+	private static final int PLAYER_POSITION_TICKS = 5;
 	// 一巡の始めに、これより古いヘッダーを読み直す
 	private static final int HEADER_TICKS = 20;
 	// 生成を始められなかった未生成のチャンクを、次の一巡までの間に空きができたら始められるよう覚えておく数
@@ -213,6 +217,9 @@ public final class TerrainServer {
 			if (player != null && viewer.active && player.level().dimension().identifier().equals(viewer.dimension)) {
 				(viewer.background ? background : open).add(viewer);
 				(viewer.background ? backgroundPlayers : openPlayers).add(player);
+				if (!viewer.background && now % PLAYER_POSITION_TICKS == 0 && ServerPlayNetworking.canSend(player, MapPlayerPositions.TYPE)) {
+					sendPlayerPositions(viewer, player);
+				}
 			}
 		}
 		long deadline = pace.loadedDeadline();
@@ -235,6 +242,26 @@ public final class TerrainServer {
 			}
 		}
 		clock++;
+	}
+
+	// バニラがロケーターバーに出す相手のうち、地図が見ている範囲にいる人だけ座標を補う
+	private static void sendPlayerPositions(TerrainViewer viewer, ServerPlayer player) {
+		ServerLevel level = player.level();
+		Map<UUID, MapPlayerPositions.Position> positions = new HashMap<>();
+		if (player.isReceivingWaypoints() && level.getGameRules().get(GameRules.LOCATOR_BAR)) {
+			var connections = ((ServerWaypointManagerAccessor) level.getWaypointManager()).minimap$connections();
+			for (WaypointTransmitter transmitter : connections.row(player).keySet()) {
+				if (transmitter instanceof ServerPlayer other && other.level() == level && !other.isRemoved()
+						&& other.isTransmittingWaypoint() && !other.isInvisibleTo(player)
+						&& !WaypointTransmitter.doesSourceIgnoreReceiver(other, player)) {
+					ChunkPos chunk = other.chunkPosition();
+					if (viewer.contains(chunk.x(), chunk.z()) && isInRange(player.chunkPosition(), chunk.x(), chunk.z())) {
+						positions.put(other.getUUID(), new MapPlayerPositions.Position(other.getX(), other.getZ()));
+					}
+				}
+			}
+		}
+		ServerPlayNetworking.send(player, new MapPlayerPositions(viewer.dimension, positions));
 	}
 
 	// 見ている人が何人いても順に先を譲る。読み始めた数を返す

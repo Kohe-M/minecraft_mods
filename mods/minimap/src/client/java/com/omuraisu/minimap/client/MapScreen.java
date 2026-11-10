@@ -1,9 +1,12 @@
 package com.omuraisu.minimap.client;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
+import com.omuraisu.minimap.MapPlayerPositions;
 import com.omuraisu.minimap.Pin;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -42,6 +45,8 @@ public class MapScreen extends Screen {
 	private boolean pressed;
 	private double dragDistance;
 	private boolean removing;
+	private MapPlayerPositions playerPositions;
+	private int playerPositionsAge;
 
 	// 名前を入力している間だけ持つ
 	private Pin editing;
@@ -72,6 +77,9 @@ public class MapScreen extends Screen {
 
 	@Override
 	public void tick() {
+		if (playerPositions != null && ++playerPositionsAge >= 20) {
+			playerPositions = null;
+		}
 		if (terrain != null) {
 			terrain.tick(minecraft);
 		}
@@ -81,6 +89,13 @@ public class MapScreen extends Screen {
 					Mth.floor(worldX(0)) >> 4, Mth.floor(worldZ(0)) >> 4,
 					Mth.floor(worldX(window.getWidth())) >> 4, Mth.floor(worldZ(window.getHeight())) >> 4,
 					Mth.floor(centerX) >> 4, Mth.floor(centerZ) >> 4);
+		}
+	}
+
+	void receivePlayerPositions(MapPlayerPositions positions) {
+		if (minecraft.level != null && positions.dimension().equals(minecraft.level.dimension().identifier())) {
+			playerPositions = positions;
+			playerPositionsAge = 0;
 		}
 	}
 
@@ -140,7 +155,9 @@ public class MapScreen extends Screen {
 			}
 		}
 
-		List<PlayerMarkers.Marker> markers = PlayerMarkers.collect(minecraft, delta);
+		Map<UUID, MapPlayerPositions.Position> positions = playerPositions != null
+				&& playerPositions.dimension().equals(minecraft.level.dimension().identifier()) ? playerPositions.positions() : Map.of();
+		List<PlayerMarkers.Marker> markers = PlayerMarkers.collect(minecraft, delta, positions);
 		int[][] faces = new int[markers.size()][];
 		for (int i = 0; i < faces.length; i++) {
 			faces[i] = face(graphics, markers.get(i), unit);
@@ -201,10 +218,10 @@ public class MapScreen extends Screen {
 		double halfHeight = window.getHeight() / 2.0;
 		double dx = screenX(marker.x()) - halfWidth;
 		double dy = screenY(marker.z()) - halfHeight;
-		boolean inside = Math.abs(dx) <= halfWidth && Math.abs(dy) <= halfHeight;
+		boolean inside = dx >= -halfWidth && dx < halfWidth && dy >= -halfHeight && dy < halfHeight;
 
 		double margin = (MapIcons.FACE_SIZE + 2) * unit / 2.0;
-		double reach = Math.min(1, Math.min((halfWidth - margin) / Math.abs(dx), (halfHeight - margin) / Math.abs(dy)));
+		double reach = inside ? 1 : Math.min((halfWidth - margin) / Math.abs(dx), (halfHeight - margin) / Math.abs(dy));
 		int x = (int) Math.round(halfWidth + dx * reach);
 		int y = (int) Math.round(halfHeight + dy * reach);
 		MapIcons.face(graphics, marker.skin(), x, y, unit, !inside);

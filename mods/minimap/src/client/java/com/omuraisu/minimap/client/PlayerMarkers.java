@@ -3,9 +3,12 @@ package com.omuraisu.minimap.client;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+
+import com.omuraisu.minimap.MapPlayerPositions;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -27,6 +30,10 @@ final class PlayerMarkers {
 	private static final double UNKNOWN_DISTANCE = 1_000_000;
 
 	static List<Marker> collect(Minecraft client, float partialTick) {
+		return collect(client, partialTick, Map.of());
+	}
+
+	static List<Marker> collect(Minecraft client, float partialTick, Map<UUID, MapPlayerPositions.Position> positions) {
 		LocalPlayer self = client.player;
 		ClientLevel level = client.level;
 		ClientPacketListener connection = client.getConnection();
@@ -63,8 +70,16 @@ final class PlayerMarkers {
 				return;
 			}
 			PlayerInfo info = connection.getPlayerInfo(id.get());
+			if (info == null) {
+				return;
+			}
+			MapPlayerPositions.Position position = positions.get(id.get());
+			if (position != null) {
+				markers.add(new Marker(info.getSkin(), info.getProfile().name(), position.x(), position.z()));
+				return;
+			}
 			double yaw = waypoint.yawAngleToCamera(level, camera, entity -> partialTick);
-			if (info == null || Double.isNaN(yaw)) {
+			if (Double.isNaN(yaw)) {
 				return;
 			}
 			double distanceSquared = waypoint.distanceSquared(self);

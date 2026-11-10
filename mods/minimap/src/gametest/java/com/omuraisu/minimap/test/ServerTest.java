@@ -33,6 +33,7 @@ import net.minecraft.network.protocol.game.ClientboundPlayerInfoUpdatePacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.storage.LevelResource;
 
 // 専用サーバー: ピンの共有と移行・他のプレイヤー・遠くの地形・ピンを共有しないサーバー
@@ -314,6 +315,8 @@ public class ServerTest implements Scenario {
 			throw new AssertionError("far player should be drawn at the east edge of the minimap");
 		}
 
+		testFarPlayerOnMap(context, server, other, x, y, z);
+
 		server.runOnServer(minecraft -> {
 			minecraft.overworld().getWaypointManager().untrackWaypoint(other);
 			minecraft.overworld().removePlayerImmediately(other, Entity.RemovalReason.DISCARDED);
@@ -323,5 +326,46 @@ public class ServerTest implements Scenario {
 		if (map(context, "server-player-left", 854, 480).pixelRelative(edge, 0) != before.pixelRelative(edge, 0)) {
 			throw new AssertionError("player who left should disappear from the minimap");
 		}
+	}
+
+	private static void testFarPlayerOnMap(ClientGameTestContext context, TestDedicatedServerContext server,
+			FakePlayer other, int x, double y, int z) {
+		int faceOutline = 0xFF101318;
+		int otherX = x + 400;
+		int otherZ = z - 80;
+		server.runOnServer(minecraft -> other.setPos(otherX + 0.5, y, otherZ + 0.5));
+		toggleMap(context);
+		zoomAtCenter(context, -2);
+		assertScale(context, 0.5);
+		context.waitTicks(20);
+		assertEquals("player outside render distance should not be a tracked entity", 1,
+				(int) context.computeOnClient(client -> client.level.players().size()));
+		ScreenView view = new ScreenView(854, 480, 0.5, x + 0.5, z + 0.5);
+		int outlineY = view.y(otherZ) - 5;
+		assertPixel(context, "server-player-map-position", view.x(otherX), outlineY, faceOutline);
+
+		// 画面の右端のすぐ内側まで動かしても、顔の中心は実際の位置に置く
+		int edgeX = x + 850;
+		server.runOnServer(minecraft -> other.setPos(edgeX + 0.5, y, otherZ + 0.5));
+		context.waitTicks(20);
+		Screenshots.read(context.takeScreenshot("server-player-map-edge"), image -> {
+			assertEquals("face at the right edge", faceOutline, image.getPixel(view.x(edgeX), outlineY));
+			if (image.getPixel(view.x(edgeX) - 6, outlineY) == faceOutline || image.getPixel(view.x(otherX), outlineY) == faceOutline) {
+				throw new AssertionError("face should move to its new position without being pulled in from the edge");
+			}
+			return null;
+		});
+
+		server.runOnServer(minecraft -> minecraft.overworld().getGameRules().set(GameRules.LOCATOR_BAR, false, minecraft));
+		context.waitTicks(10);
+		Screenshots.read(context.takeScreenshot("server-player-map-hidden"), image -> {
+			if (image.getPixel(view.x(edgeX), outlineY) == faceOutline) {
+				throw new AssertionError("far player should disappear when the locator bar is disabled");
+			}
+			return null;
+		});
+		server.runOnServer(minecraft -> minecraft.overworld().getGameRules().set(GameRules.LOCATOR_BAR, true, minecraft));
+		zoomAtCenter(context, 2);
+		toggleMap(context);
 	}
 }
