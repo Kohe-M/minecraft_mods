@@ -16,6 +16,7 @@ import com.mojang.authlib.GameProfile;
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.Pin;
 import com.omuraisu.minimap.PinEdit;
+import com.omuraisu.minimap.PinList;
 import com.omuraisu.minimap.PinServer;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.client.Pins;
@@ -141,6 +142,86 @@ public class ServerTest implements Scenario {
 				}
 			}
 
+			testRejectedMigration(context, server, serverFile, localFile, feet);
+		}
+	}
+
+	// サーバーが上限で断ったピンは手元のファイルに残し、空きができてから入り直すと移る。
+	// 以前は送った直後に手元のファイルを消していたので、断られたピンを失っていた
+	private static void testRejectedMigration(ClientGameTestContext context, TestDedicatedServerContext server, Path serverFile, Path localFile, int[] feet) {
+		GameProfile profile = new GameProfile(UUID.nameUUIDFromBytes("minimap-pin-filler".getBytes(StandardCharsets.UTF_8)), "Filler");
+		// 上限の 1 本前まで埋める。サーバーの一覧は接続している人がいないので送られない
+		int fillers = server.computeOnServer(minecraft -> {
+			FakePlayer filler = FakePlayer.get(minecraft.overworld(), profile);
+			int count = 0;
+			try {
+				while (Files.readAllLines(serverFile).size() < PinList.MAX_PINS - 1) {
+					PinServer.edit(filler, new PinEdit(PinEdit.Action.PLACE, filler(count++)));
+				}
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+			return count;
+		});
+		Pin accepted = new Pin(OVERWORLD, feet[0] - 40, feet[1] + 30, "Accepted");
+		Pin rejected = new Pin(OVERWORLD, feet[0] - 45, feet[1] + 35, "Rejected");
+		writeFile(localFile, accepted.line() + "\n" + rejected.line() + "\n");
+
+		try (TestDedicatedServerConnection connection = server.connect()) {
+			connection.waitForChunksRender();
+			context.waitTicks(10);
+			List<Pin> shown = context.computeOnClient(client -> MinimapClient.PINS.in(OVERWORLD));
+			assertEquals("pins shown with the server full", PinList.MAX_PINS, shown.size());
+			if (!shown.contains(accepted) || shown.contains(rejected)) {
+				throw new AssertionError("only the pin that fits should be shared but the client showed accepted " + shown.contains(accepted)
+						+ ", rejected " + shown.contains(rejected));
+			}
+			assertFileEquals(localFile, rejected.line() + "\n");
+			assertServerFile(serverFile, accepted, true);
+			assertServerFile(serverFile, rejected, false);
+		}
+
+		// 空きを作って入り直すと、残っていたピンが移り、手元のファイルは消える
+		server.runOnServer(minecraft -> {
+			FakePlayer filler = FakePlayer.get(minecraft.overworld(), profile);
+			for (int i = 0; i < 10; i++) {
+				PinServer.edit(filler, new PinEdit(PinEdit.Action.REMOVE, filler(fillers - 1 - i)));
+			}
+		});
+		try (TestDedicatedServerConnection connection = server.connect()) {
+			connection.waitForChunksRender();
+			context.waitTicks(10);
+			if (!context.computeOnClient(client -> MinimapClient.PINS.in(OVERWORLD).contains(rejected))) {
+				throw new AssertionError("the pin left on the client should be shared once the server has room");
+			}
+			assertServerFile(serverFile, rejected, true);
+			if (Files.exists(localFile)) {
+				throw new AssertionError("local pins should be deleted once all of them are shared: " + localFile);
+			}
+		}
+	}
+
+	// 地図に出ても邪魔にならない遠く
+	private static Pin filler(int index) {
+		return new Pin(OVERWORLD, 100_000 + index, 100_000);
+	}
+
+	private static void writeFile(Path file, String text) {
+		try {
+			Files.createDirectories(file.getParent());
+			Files.writeString(file, text);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	private static void assertServerFile(Path serverFile, Pin pin, boolean contains) {
+		try {
+			if (Files.readAllLines(serverFile).contains(pin.line()) != contains) {
+				throw new AssertionError("server pin file should " + (contains ? "" : "not ") + "contain " + pin.line());
+			}
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 

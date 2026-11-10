@@ -7,8 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
-import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +29,10 @@ public final class Pins {
 	private boolean shared;
 	// 接続してからサーバーに送った変更の数。届いた一覧がそこまで反映していなければ、手元で先に変えた分が消えないよう捨てる
 	private int sent;
+	// 共有に移している途中の、手元のファイル（legacy）のピン。サーバーの一覧に出たものだけを移し終えたとする。
+	// 送った変更をサーバーがすべて反映しても出ないもの（上限で断られた）と、確かめる前に切断した分は手元のファイルに残る
+	private Path legacy;
+	private final List<Pin> migrating = new ArrayList<>();
 
 	public static Path serverFile(String address) {
 		return FabricLoader.getInstance().getConfigDir().resolve("minimap").resolve(encodeAddress(address) + ".txt");
@@ -48,20 +50,21 @@ public final class Pins {
 		if (file == null) {
 			return;
 		}
-		List<String> lines;
 		try {
-			lines = Files.readAllLines(file);
+			pins.addAll(Pin.read(file));
 		} catch (IOException e) {
-			return;
+			LOGGER.warn("Failed to read pins from {}", file, e);
 		}
-		lines.stream().map(Pin::parse).flatMap(Optional::stream).forEach(pins::add);
 	}
 
+	// 共有に移している途中のピンは手元のファイルに残っていて、次に入ったときに移し直す
 	public void close() {
 		file = null;
 		pins.clear();
 		shared = false;
 		sent = 0;
+		legacy = null;
+		migrating.clear();
 	}
 
 	public boolean isShared() {
@@ -71,26 +74,51 @@ public final class Pins {
 	public void receive(PinList list) {
 		if (!shared) {
 			shared = true;
-			// サーバーに mod を入れる前に手元に刺していたピンは、共有に移して手元のファイルを消す
-			List<Pin> local = List.copyOf(pins);
-			Path legacy = file;
-			file = null;
-			pins.clear();
-			pins.addAll(list.pins());
-			local.forEach(this::place);
-			if (legacy != null) {
-				try {
-					Files.deleteIfExists(legacy);
-				} catch (IOException e) {
-					LOGGER.warn("Failed to delete {}", legacy, e);
-				}
+			startMigration(list);
+		} else {
+			// サーバーは変更を反映するたびに一覧を送るので、受け付けられたピンはどれかの一覧に出る
+			migrating.removeIf(pin -> list.pins().stream().anyMatch(pin::samePlace));
+			if (list.acknowledged() < sent) {
+				return;
 			}
-			return;
-		}
-		if (list.acknowledged() >= sent) {
 			pins.clear();
 			pins.addAll(list.pins());
 		}
+		if (legacy != null && list.acknowledged() >= sent) {
+			finishMigration();
+		}
+	}
+
+	// サーバーに mod を入れる前に手元に刺していたピンを、共有に移し始める。サーバーに同じ場所のピンがあれば移さない
+	private void startMigration(PinList list) {
+		List<Pin> local = List.copyOf(pins);
+		legacy = file;
+		file = null;
+		pins.clear();
+		pins.addAll(list.pins());
+		for (Pin pin : local) {
+			if (list.pins().stream().noneMatch(pin::samePlace)) {
+				migrating.add(pin);
+				place(pin);
+			}
+		}
+	}
+
+	// 送った変更をサーバーがすべて反映した。移せなかったピンだけを手元のファイルに残し、なければファイルを消す
+	private void finishMigration() {
+		Path file = legacy;
+		legacy = null;
+		try {
+			if (migrating.isEmpty()) {
+				Files.deleteIfExists(file);
+			} else {
+				LOGGER.warn("{} pins could not be shared with the server and stay in {}", migrating.size(), file);
+				Pin.write(file, migrating);
+			}
+		} catch (IOException e) {
+			LOGGER.warn("Failed to update {}", file, e);
+		}
+		migrating.clear();
 	}
 
 	public List<Pin> in(Identifier dimension) {
@@ -133,10 +161,8 @@ public final class Pins {
 		if (file == null) {
 			return;
 		}
-		String text = pins.stream().map(pin -> pin.line() + "\n").collect(Collectors.joining());
 		try {
-			Files.createDirectories(file.getParent());
-			Files.writeString(file, text);
+			Pin.write(file, pins);
 		} catch (IOException e) {
 			LOGGER.warn("Failed to save pins to {}", file, e);
 		}

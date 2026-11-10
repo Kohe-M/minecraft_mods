@@ -1,6 +1,15 @@
 package com.omuraisu.minimap;
 
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -63,6 +72,27 @@ public record Pin(Identifier dimension, int x, int z, String name) {
 			return Optional.of(new Pin(dimension, Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), name));
 		} catch (NumberFormatException e) {
 			return Optional.empty();
+		}
+	}
+
+	// 読めない行は飛ばす。ファイルがなければ空
+	public static List<Pin> read(Path file) throws IOException {
+		try {
+			return Files.readAllLines(file).stream().map(Pin::parse).flatMap(Optional::stream).toList();
+		} catch (NoSuchFileException e) {
+			return List.of();
+		}
+	}
+
+	// 一時ファイルに書いてから置き換える。書いている途中で落ちても、前の中身か新しい中身のどちらかが残る
+	public static void write(Path file, Collection<Pin> pins) throws IOException {
+		Files.createDirectories(file.getParent());
+		Path temp = file.resolveSibling(file.getFileName() + ".tmp");
+		Files.writeString(temp, pins.stream().map(pin -> pin.line() + "\n").collect(Collectors.joining()));
+		try {
+			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+		} catch (AtomicMoveNotSupportedException e) {
+			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
 		}
 	}
 }

@@ -1,16 +1,12 @@
 package com.omuraisu.minimap;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,11 +33,9 @@ public final class PinServer {
 		this.server = server;
 		this.file = server.getWorldPath(LevelResource.ROOT).resolve("minimap_pins.txt");
 		try {
-			for (Pin pin : Files.readAllLines(file).stream().map(Pin::parse).flatMap(Optional::stream).toList()) {
+			for (Pin pin : Pin.read(file)) {
 				apply(new PinEdit(PinEdit.Action.PLACE, pin));
 			}
-		} catch (NoSuchFileException e) {
-			// まだ誰も刺していない
 		} catch (IOException e) {
 			LOGGER.warn("Failed to read pins from {}", file, e);
 		}
@@ -127,10 +121,8 @@ public final class PinServer {
 	}
 
 	private void save() {
-		String text = pins.stream().map(pin -> pin.line() + "\n").collect(Collectors.joining());
 		try {
-			Files.createDirectories(file.getParent());
-			Files.writeString(file, text);
+			Pin.write(file, pins);
 		} catch (IOException e) {
 			LOGGER.warn("Failed to save pins to {}", file, e);
 		}
