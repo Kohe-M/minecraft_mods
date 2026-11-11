@@ -3,8 +3,12 @@ package com.omuraisu.placer.client;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+
+import org.slf4j.Logger;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.logging.LogUtils;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -18,6 +22,8 @@ import net.minecraft.resources.Identifier;
 public class PlacerClient implements ClientModInitializer {
 	public static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("placer.txt");
 
+	private static final Logger LOGGER = LogUtils.getLogger();
+
 	public static KeyMapping toggle;
 
 	// Jori の一覧で無効にされている間は false。キーも効かず、設置はバニラのまま
@@ -26,7 +32,7 @@ public class PlacerClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		enabled = load();
+		load();
 
 		toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.placer.toggle",
@@ -63,18 +69,30 @@ public class PlacerClient implements ClientModInitializer {
 		return active && enabled;
 	}
 
-	private static boolean load() {
+	// config/placer.txt に 1 行 1 つ「キー=値」。いまの項目は enabled だけ。知らない行は無視するので、項目を足しても前の値を読める。
+	// 読めないとき・書いていないときは有効
+	public static void load() {
+		enabled = true;
+		List<String> lines;
 		try {
-			return !Files.readString(CONFIG).strip().equals("enabled=false");
+			lines = Files.readAllLines(CONFIG);
 		} catch (IOException e) {
-			return true;
+			return;
+		}
+		for (String line : lines) {
+			int separator = line.indexOf('=');
+			if (separator > 0 && line.substring(0, separator).strip().equals("enabled")) {
+				enabled = !line.substring(separator + 1).strip().equals("false");
+			}
 		}
 	}
 
+	// 書けなくても遊ぶのには困らないが、黙って捨てずにログに出す
 	private static void save() {
 		try {
 			Files.writeString(CONFIG, "enabled=" + enabled + "\n");
-		} catch (IOException ignored) {
+		} catch (IOException e) {
+			LOGGER.warn("Failed to save {}: {}", CONFIG, e.toString());
 		}
 	}
 }

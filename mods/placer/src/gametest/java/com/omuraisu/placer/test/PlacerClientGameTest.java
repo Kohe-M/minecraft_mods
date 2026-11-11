@@ -43,6 +43,7 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 			singleplayer.getConnection().waitForChunksRender();
 
 			testToggleKey();
+			testConfig();
 			testHoldPlacesOne();
 			testVanillaWhenDisabled();
 			testVanillaWhenInactive();
@@ -75,6 +76,25 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 		assertConfig("enabled=false");
 		pressToggle();
 		assertEnabled(true);
+		assertConfig("enabled=true");
+	}
+
+	// config/placer.txt は行ごとに読む。知らない行が混ざっていても enabled を読め、書いていなければ有効
+	private void testConfig() {
+		try {
+			Files.writeString(PlacerClient.CONFIG, "# memo\nfuture_option=3\n enabled = false \nbroken line\n");
+			context.runOnClient(client -> PlacerClient.load());
+			assertEnabled(false);
+			Files.writeString(PlacerClient.CONFIG, "future_option=3\n");
+			context.runOnClient(client -> PlacerClient.load());
+			assertEnabled(true);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		// 切り替えると、知らない行は残さずに書き直す
+		pressToggle();
+		assertConfig("enabled=false");
+		pressToggle();
 		assertConfig("enabled=true");
 	}
 
