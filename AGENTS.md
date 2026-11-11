@@ -66,6 +66,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 - `<mod>/<mod_version>+<MC>`（例: `sorter/1.0.0+26.3`）の注釈付きタグ
 - `mod_version` を上げたコミット、または MC 移植を終えたコミットに付ける
 - `python tools/dev.py release sorter minor timber patch` で、版を上げるコミット（`chore(<mod>): <版> をリリース`）とタグをまとめて作る
+  - 上げる mod（一緒に上げる jori も）を、いまと同じ中身でシナリオで絞らずに `dev.py test` で通した記録がなければ止まる。jar とゲームテストに入らない docs だけのコミットは、test の後に入っても通る（[docs/development.md](docs/development.md) の「テストの記録」）。`--no-test-check` で飛ばせるが、使うのはユーザーに言われたときだけ
   - 先に版を書き換えた状態で jar を作り（`:<mod>:assemble`。テストは `dev.py test` で済ませているので走らせない）、`dev.py check` と同じ検査をしてから、コミットしてタグを付ける。失敗したら版を元に戻すので、直して同じコマンドを走らせ直せばよい
   - CI はないので、配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar` のこれ
   - jori に入っている mod を上げると、jori も一番大きい上げ方で一緒に上げる（`--no-bundle` で止める）

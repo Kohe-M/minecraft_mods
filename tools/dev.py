@@ -10,6 +10,7 @@
 """
 
 import argparse
+import hashlib
 import html
 import io
 import json
@@ -19,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -137,6 +139,40 @@ def changed_files(base):
     files.update(git("diff", "--name-only", "HEAD").split())
     files.update(git("ls-files", "--others", "--exclude-standard").split())
     return files
+
+
+def content_tree():
+    """作業ツリーの中身を表す git の tree。コミットしていない変更と追跡していないファイル（.gitignore のものは除く）も含め、
+    同じ中身なら同じ値になる。本物のインデックスには触らず、写しに git add -A して作る"""
+    index = ROOT / git("rev-parse", "--git-path", "index").strip()
+    with tempfile.TemporaryDirectory() as folder:
+        copy = Path(folder) / "index"
+        if index.is_file():
+            shutil.copyfile(index, copy)
+        env = dict(os.environ, GIT_INDEX_FILE=str(copy))
+        for command in (["add", "-A"], ["write-tree"]):
+            result = subprocess.run(["git", *command], cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                sys.exit(f"git {' '.join(command)} が失敗しました:\n{result.stderr.strip()}")
+        return result.stdout.strip()
+
+
+def content_paths(mod):
+    """mod の jar とゲームテストの中身を決めるもの。jori は中の mod も。
+    docs・README・AGENTS.md・tools は jar にもゲームテストにも入らないので含めない（docs だけのコミットが後から入っても同じ値になる）"""
+    mods = [mod] + (bundle_modules() if mod == BUNDLE else [])
+    return sorted({f"mods/{m}" for m in mods} | {p.rstrip("/") for p in SHARED_PATHS + TEST_SHARED_PATHS} | {"LICENSE"})
+
+
+def content_keys(mods, tree):
+    """mod ごとの、中身を表す値（content_paths の git のハッシュをまとめたもの）"""
+    paths = sorted({p for mod in mods for p in content_paths(mod)})
+    hashes = {}
+    for line in git("ls-tree", tree, "--", *paths).splitlines():
+        meta, path = line.split("\t", 1)
+        hashes[path] = meta.split()[2]
+    return {mod: hashlib.sha1("".join(f"{p} {hashes.get(p, '-')}\n" for p in content_paths(mod)).encode()).hexdigest()
+            for mod in mods}
 
 
 def shared_prefix(path, prefixes):
@@ -645,12 +681,18 @@ def command_test(args):
     log = OUT / "gradle.log"
     log.write_text("", encoding="utf-8")
     started = time.time()
+    tree = content_tree()
     record = {
         "id": time.strftime("%Y%m%d-%H%M%S"),
         "started": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "commit": git("rev-parse", "HEAD").strip(),
         "branch": git("rev-parse", "--abbrev-ref", "HEAD").strip(),
         "uncommitted": [line[3:] for line in git("status", "--porcelain").splitlines()],
+        # 走らせ始めたときの中身。release はこれと今の中身を比べる（content_keys）
+        "content": {"tree": tree, "keys": content_keys(plan["mods"], tree)},
+        # シナリオで絞ったか、クライアントのテストを飛ばしたか。描画の構成は renders と、mod ごとの結果の client・vanilla
+        "filtered": bool(plan["scenarios"]) or args.no_client,
+        "renders": [step["render"] for step in plan["passes"]],
         "plan": plan,
     }
 
@@ -1068,6 +1110,35 @@ def plan_release(args):
     return plan
 
 
+def test_records():
+    """test の記録（build/dev/runs）。新しい順"""
+    records = []
+    for path in sorted(RUNS.glob("*.json"), reverse=True) if RUNS.is_dir() else []:
+        try:
+            records.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    return records
+
+
+def passing_record(mod, key, records):
+    """mod を、中身が key のときに、絞らずに通した test の記録。なければ None。
+    クライアントのテストがある mod は Sodium + Iris で、描画にフックする mod はバニラ描画でも通っていること"""
+    for record in records:
+        if record.get("content", {}).get("keys", {}).get(mod) != key or record.get("filtered", True):
+            continue
+        result = next((r for r in record.get("results", []) if r.get("mod") == mod), None)
+        if result is None or not result.get("ok"):
+            continue
+        if has_client_tests(mod):
+            if record.get("plan", {}).get("render") != SODIUM or not result.get("client", "").startswith("OK"):
+                continue
+            if vanilla_render_test(mod) and not result.get("vanilla", "").startswith("OK"):
+                continue
+        return record
+    return None
+
+
 def set_version(mod, version):
     path = MODS_DIR / mod / "gradle.properties"
     text = path.read_text(encoding="utf-8")
@@ -1081,6 +1152,15 @@ def command_release(args):
         change = "版はそのまま（移植）" if item["level"] == "port" else f"{item['old']} → {item['new']}"
         print(f"{item['mod']}: {change}（{item['tag']}）")
     mods = [item["mod"] for item in plan]
+    # 版を書き換える前の中身で、絞らずに通した test の記録を探す（jar とゲームテストに入らない docs などが後から変わっても通る）
+    keys = content_keys(mods, content_tree())
+    records = test_records()
+    untested = []
+    for mod in mods:
+        record = passing_record(mod, keys[mod], records)
+        print(f"  テスト {mod}: " + (f"通った記録 {record['id']}" if record else "いまの中身で、シナリオで絞らずに通した記録がない"))
+        if record is None:
+            untested.append(mod)
     if args.dry_run:
         print("jar: " + " ".join(f":{m}:assemble" for m in mods))
         return 0
@@ -1089,6 +1169,9 @@ def command_release(args):
     untracked = untracked_sources()
     if untracked:
         sys.exit("追跡していないファイルがあり、jar に入るとタグと食い違う。コミットするか消す:\n  " + "\n  ".join(untracked))
+    if untested and not args.no_test_check:
+        sys.exit(f"テストを通していない: {', '.join(untested)}。python tools/dev.py test {' '.join(untested)} で走らせる"
+                 "（確かめずに進めるなら --no-test-check）")
 
     # 版を書き換えた状態で jar を作って確かめてから、コミットしてタグを付ける。
     # 途中で失敗したら版を元に戻すので、直してから同じコマンドをもう一度走らせればよい
@@ -1168,6 +1251,7 @@ def main():
     release.add_argument("--push", action="store_true", help="最後に git push --follow-tags する")
     release.add_argument("--trailer", action="append", default=[], help="コミットメッセージの末尾に足す行（Co-Authored-By など）")
     release.add_argument("--dry-run", action="store_true", help="何を上げるかだけ出す")
+    release.add_argument("--no-test-check", action="store_true", help="いまの中身で test を通した記録があるかを確かめない")
     release.set_defaults(run=command_release)
 
     args = parser.parse_args()

@@ -56,7 +56,7 @@ python tools/dev.py test xray --no-vanilla   # 描画にフックする mod で�
 | `mods/<mod>/build/run/clientGameTest/logs/latest.log` | クライアントのゲームテストのゲームのログ |
 | `mods/<mod>/build/run/gameTest/logs/latest.log` | サーバーのゲームテストのゲームのログ |
 
-前の結果を引き継ぐときは、`last-run.json` の `commit` と `uncommitted` がいまの作業と同じかを先に見る。
+前の結果を引き継ぐときは、`last-run.json` の `commit` と `uncommitted` がいまの作業と同じかを先に見る。記録には、走らせ始めたときの中身（`content`）・シナリオで絞ったか（`filtered`）・描画の構成（`renders`）も残る。release はこれを見る（「テストの記録」）。
 
 ### 失敗したとき
 
@@ -91,10 +91,24 @@ python tools/dev.py release fullbright port minimap port # MC の移植。版は
 - status は、HEAD の祖先にある、いまの MC（`gradle.properties` の `minecraft_version`）のタグと比べる。旧 MC の保守ブランチでも、そのブランチの MC のタグを見る。いまの MC のタグがない mod は「移植だけなら release <mod> port」と出す
 - release の順番
   1. 上げる mod・版・タグを先に決める（jori は中の mod の後。タグが既にあれば止まる）
-  2. 版を書き換えた状態で jar を作り（`:<mod>:assemble`）、check の jar の検査をする
-  3. 通ったら mod ごとにコミットしてタグを付ける。port の mod はいまのコミットにタグだけ付ける
-- 2 で失敗したら版を元に戻して止まる。コミットもタグも残らないので、直してから同じコマンドをもう一度走らせればよい
+  2. 上げる mod（一緒に上げる jori も）ごとに、いまと同じ中身で絞らずに通した test の記録（`build/dev/runs/`）があるかを確かめる。なければ止まる（下の「テストの記録」）
+  3. 版を書き換えた状態で jar を作り（`:<mod>:assemble`）、check の jar の検査をする
+  4. 通ったら mod ごとにコミットしてタグを付ける。port の mod はいまのコミットにタグだけ付ける
+- 3 で失敗したら版を元に戻して止まる。コミットもタグも残らないので、直してから同じコマンドをもう一度走らせればよい
 - 配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar`。版を上げたコミットと jar の中身は同じ（jar を作ってからコミットまでに変わるのは、ほかの mod の `gradle.properties` だけ）
+
+### テストの記録
+
+テストを通していない中身をリリースしないよう、release は test の記録を確かめる。`--dry-run` でも結果を出す。確かめずに進めるなら `--no-test-check`。
+
+- test は走らせ始めたときに、作業ツリーの中身を表す値を記録に残す（`last-run.json` の `content`）。git の tree（コミットしていない変更・追跡していないファイルも含め、同じ中身なら同じ値。本物のインデックスには触らず、写しに `git add -A` して作る）と、mod ごとの値（`content.keys`）
+  - mod ごとの値は、`mods/<mod>`（jori は中の mod も）・ルートのビルド設定（`build.gradle`・`settings.gradle`・`gradle.properties`・`gradle/`）・`testkit/`・`LICENSE` の git のハッシュから作る
+  - docs・README・AGENTS.md・`tools/` は含めない。jar にもゲームテストにも入らず、変わってもテストの結果は変わらないので、test の後に docs だけのコミットが入っても通す。jar とゲームテストに入るものが 1 つでも変われば値が変わり、test を走らせ直す
+- release は、版を書き換える前の中身で mod ごとの値を作り、同じ値で次の条件を満たす記録を新しい順に探す
+  - シナリオで絞っていない（`--scenario` なし）、クライアントのテストを飛ばしていない（`--no-client` なし）。記録の `filtered` が false
+  - その mod の結果が OK。クライアントのテストがある mod は Sodium + Iris で通っている（`--no-sodium` だけの記録は使わない）。描画にフックする mod は、バニラ描画の 2 回目も通っている
+- 中の mod だけを `--no-bundle` でリリースした後に jori を別にリリースすると、jori の値（中の mod の `gradle.properties`）が変わっているので、jori の test を走らせ直す。ふつうは jori も一緒に上げるので、走らせ直さなくてよい
+- 記録は直近の 30 回しか残らないので、test の後に何度も test を走らせると探せなくなることがある
 
 ## クライアントのゲームテストの分け方
 
