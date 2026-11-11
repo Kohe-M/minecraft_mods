@@ -1,11 +1,17 @@
 package com.omuraisu.minimap;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
+import java.lang.management.MemoryUsage;
+import java.util.List;
+
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.Util;
 
 // tick ごとの処理の予算。サーバーが予定より遅れていないかを見て、読み始める数・同時に読む数・同時に生成する数・
 // ワールドに読み込まれたチャンクから色を作る時間を決める。数えるのはサーバー全体（人数が増えても負担が増えない）
-final class TerrainPace {
+public final class TerrainPace {
 	// 1 tick に読み始める数と、同時に読んでいる数。遅れている間は、読み終えた後の送る処理も減らすため少なくする
 	private static final int READS_PER_TICK = 1024;
 	private static final int READS_PER_TICK_BEHIND = 32;
@@ -21,10 +27,14 @@ final class TerrainPace {
 	private static final int MAX_GENERATING = 256;
 	private static final int GENERATING_STEP = 8;
 	// 直近 20 tick にかかった時間が予定の 1.1 倍を超えるか（tick の合間の処理も含む）、tick がこれより重いか、
-	// ヒープの使っている量が上限の 85% を超えたら絞る。vanilla は予定より 1 秒遅れると Can't keep up を出す
+	// 直近の GC の後に残ったヒープが上限の 85% を超えたら絞る。vanilla は予定より 1 秒遅れると Can't keep up を出す
 	private static final int PACE_TICKS = 20;
 	private static final long SLOW_TICK_NANOS = 40_000_000;
 	private static final int MEMORY_PERCENT = 85;
+	// ヒープのメモリプール。GC の後の使用量（getCollectionUsage）を持たないものは使わない
+	private static final List<MemoryPoolMXBean> HEAP_POOLS = ManagementFactory.getMemoryPoolMXBeans().stream()
+			.filter(pool -> pool.getType() == MemoryType.HEAP && pool.getCollectionUsage() != null)
+			.toList();
 
 	private final long[] tickTimes = new long[PACE_TICKS];
 	private boolean behind;
@@ -43,10 +53,23 @@ final class TerrainPace {
 		long previous = tickTimes[now % PACE_TICKS];
 		tickTimes[now % PACE_TICKS] = time;
 		long expected = PACE_TICKS * server.tickRateManager().nanosecondsPerTick();
-		Runtime runtime = Runtime.getRuntime();
-		boolean lowMemory = (runtime.totalMemory() - runtime.freeMemory()) / MEMORY_PERCENT > runtime.maxMemory() / 100;
+		boolean lowMemory = usedAfterGc() / MEMORY_PERCENT > Runtime.getRuntime().maxMemory() / 100;
 		behind = previous != 0 && (time - previous) * 10 > expected * 11 || server.getAverageTickTimeNanos() > SLOW_TICK_NANOS || lowMemory;
 		adjustGenerationLimit(now);
+	}
+
+	// 直近の GC の後に残ったヒープの量（プールごとの GC の後の使用量の和）。
+	// その瞬間の使用量（totalMemory - freeMemory）は、まだ回収していないごみを含み、GC の前には上限近くまで膨らむ。
+	// それで見ていたときは、ヒープが 3 GB だと、生きているのが 2 割ほどでもごみだけで 85% を超え、生成が 4 つまで絞られていた
+	public static long usedAfterGc() {
+		long used = 0;
+		for (MemoryPoolMXBean pool : HEAP_POOLS) {
+			MemoryUsage usage = pool.getCollectionUsage();
+			if (usage != null) {
+				used += usage.getUsed();
+			}
+		}
+		return used;
 	}
 
 	// 遅れていなければ 1 秒ごとに増やし（上限のせいで生成を始められなかったときだけ）、遅れたら半分にする

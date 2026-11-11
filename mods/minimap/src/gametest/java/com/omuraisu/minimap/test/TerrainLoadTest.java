@@ -2,8 +2,11 @@ package com.omuraisu.minimap.test;
 
 import static com.omuraisu.minimap.test.MapTests.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
+import com.omuraisu.minimap.TerrainPace;
 import com.omuraisu.minimap.TerrainRegions;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.client.MinimapClient;
@@ -26,7 +29,26 @@ public class TerrainLoadTest implements Scenario {
 	public void run(ClientGameTestContext context) {
 		watchFullLoads();
 		resetConfig(context);
+		testMemoryAfterGc();
 		testFarTerrainLoad(context);
+	}
+
+	// 遅れの判定に使うヒープの量は、直近の GC の後に残った量。その瞬間の使用量と違い、まだ回収していないごみでは増えない
+	private static void testMemoryAfterGc() {
+		Runtime runtime = Runtime.getRuntime();
+		List<byte[]> garbage = new ArrayList<>();
+		for (int i = 0; i < 64; i++) {
+			garbage.add(new byte[4 << 20]);
+		}
+		long withGarbage = runtime.totalMemory() - runtime.freeMemory();
+		garbage.clear();
+		System.gc();
+		long afterGc = TerrainPace.usedAfterGc();
+		System.out.printf("memory-after-gc: %d MB with 256 MB of garbage, %d MB after GC%n", withGarbage >> 20, afterGc >> 20);
+		if (afterGc <= 0 || afterGc > withGarbage - (128 << 20)) {
+			throw new AssertionError("heap after GC should leave out the garbage: " + (afterGc >> 20) + " MB after GC, "
+					+ (withGarbage >> 20) + " MB with 256 MB of garbage");
+		}
 	}
 
 	// 4K で一番引いても、サーバーが遅れず、地図のためにチャンクをワールドへ読み込まない。
