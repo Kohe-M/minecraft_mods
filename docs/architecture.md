@@ -59,6 +59,9 @@ Loom の `splitEnvironmentSourceSets` で分ける。
   - 単押しと長押しで役割が違うキー（fullbright・xray）は、離したときに単押しかどうかを決める
 - 状態の表示: キーで切り替えたらアクションバー（`sendOverlayMessage`）に出す
 - 設定: `config/<mod>.txt` に 1 行 1 つ `キー=値`。読めないときは既定の値で動く
+  - 行ごとに最初の `=` で分け、キーと値の前後の空白を除いて読む。知らないキーの行と `=` のない行は無視する。項目を足しても、前の版で書いたファイルの値を読めるようにするため（以前は placer・timber がファイル全体を `enabled=false` と比べ、xray がファイル全体から `mode=` を消して読んでいて、行が増えると値を失った）
+  - 読み方は各 mod の中に書く（共有のライブラリは作らない。jori の中でも各 mod は単体のときと同じ jar のまま動くため）
+  - 保存に失敗したら、ログに 1 行（ファイルと理由）出す。遊ぶのには困らないので止めないが、黙って捨てない
 - ホイール: キーを押している間のホイールを使う mod（fullbright・zoom）は `MouseHandler.onScroll` の `ScrollWheelHandler.onMouseScroll` を包み、使った分は (0, 0) を返してホットバーに回さない
 - 通信: payload は main に `CustomPacketPayload` の record で置き、`PayloadTypeRegistry` に登録する
   - サーバーの受け口は `ServerPlayConnectionEvents.INIT` で接続ごとに作る。jori で無効にした専用サーバーでは作らず、クライアントには mod のないサーバーと同じに見せる
