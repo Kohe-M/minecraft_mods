@@ -5,7 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.slf4j.Logger;
+
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.logging.LogUtils;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -19,6 +22,8 @@ import net.minecraft.util.Mth;
 
 public class FullbrightClient implements ClientModInitializer {
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("fullbright.txt");
+
+	private static final Logger LOGGER = LogUtils.getLogger();
 
 	// 明るさ設定の倍率。1 が設定画面の最大（100%）
 	public static final int MIN_LEVEL = 2;
@@ -115,6 +120,7 @@ public class FullbrightClient implements ClientModInitializer {
 		}
 	}
 
+	// config/fullbright.txt に 1 行 1 つ「キー=値」（enabled・level）。キーと値の前後の空白は無視し、知らない行も無視する
 	public static void load() {
 		enabled = true;
 		level = MAX_LEVEL;
@@ -126,21 +132,29 @@ public class FullbrightClient implements ClientModInitializer {
 			return;
 		}
 		for (String line : lines) {
-			if (line.strip().equals("enabled=false")) {
-				enabled = false;
-			} else if (line.startsWith("level=")) {
+			int separator = line.indexOf('=');
+			if (separator <= 0) {
+				continue;
+			}
+			String key = line.substring(0, separator).strip();
+			String value = line.substring(separator + 1).strip();
+			if (key.equals("enabled")) {
+				enabled = !value.equals("false");
+			} else if (key.equals("level")) {
 				try {
-					level = Mth.clamp(Integer.parseInt(line.substring(6).strip()), MIN_LEVEL, MAX_LEVEL);
+					level = Mth.clamp(Integer.parseInt(value), MIN_LEVEL, MAX_LEVEL);
 				} catch (NumberFormatException ignored) {
 				}
 			}
 		}
 	}
 
+	// 書けなくても遊ぶのには困らないが、黙って捨てずにログに出す
 	private static void save() {
 		try {
 			Files.writeString(CONFIG, "enabled=" + enabled + "\nlevel=" + level + "\n");
-		} catch (IOException ignored) {
+		} catch (IOException e) {
+			LOGGER.warn("Failed to save {}: {}", CONFIG, e.toString());
 		}
 	}
 }

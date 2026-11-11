@@ -152,6 +152,11 @@ public class FullbrightClientGameTest implements FabricClientGameTest {
 			Files.writeString(CONFIG, "level=abc\n");
 			FullbrightClient.load();
 			assertState(true, FullbrightClient.MAX_LEVEL);
+
+			// 行ごとに読むので、知らない行が混ざっていても値を読める。キーと値の前後の空白は無視する
+			Files.writeString(CONFIG, "# memo\nfuture_option=3\n enabled = false \nbroken line\nlevel = 4\n");
+			FullbrightClient.load();
+			assertState(false, 4);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
