@@ -69,8 +69,8 @@ python tools/dev.py check            # ソースと、いまある jar
 python tools/dev.py check --build    # jar を作ってから
 ```
 
-- ソース: `fabric.mod.json` の id と version、`en_us.json` と `ja_jp.json` のキーがそろっている、アイコンが 128 × 128、`docs/mods/<mod>.md` と README の表に載っている、jori の `modules`・`JoriClient.FEATURES`・`jori.description.<mod>` が mod の一覧と合う
-- jar: `fabric.mod.json` が UTF-8 として読め、置換文字や埋めていない `${...}` がなく、id・版・名前・説明が元と同じ。jori は同梱の一覧が `modules` の今の版と合い、同梱した各 jar の中身も同じように見る
+- ソース: `fabric.mod.json` の id と version、`en_us.json` と `ja_jp.json` のキーがそろっている、`*.mixins.json` の `compatibilityLevel` が `JAVA_${java_version}`、アイコンが 128 × 128、`docs/mods/<mod>.md` と README の表に載っている、jori の `modules`・`JoriClient.FEATURES`・`jori.description.<mod>` が mod の一覧と合う
+- jar: `fabric.mod.json` が UTF-8 として読め、置換文字や埋めていない `${...}` がなく、id・版・名前・説明が元と同じ。`fabric.mod.json` の `mixins` に並ぶ設定ファイルが入っていて、埋めていない `${...}` がなく、`compatibilityLevel` が `JAVA_<java_version>`。jori は同梱の一覧が `modules` の今の版と合い、同梱した各 jar の中身も同じように見る
 - release は jar を作った後にこれを走らせ、食い違いがあればコミットもタグも作らない
 
 ## リリース（status・release）

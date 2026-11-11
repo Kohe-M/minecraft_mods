@@ -664,6 +664,11 @@ def check_sources():
             problems.append(f"{rel(icon)} がない")
         elif png_size(icon) != (128, 128):
             problems.append(f"{rel(icon)} が 128 × 128 でない（{png_size(icon)}）")
+        # MC に依存するバージョンはルートの gradle.properties にだけ書く。jar を作るときに java_version で埋める
+        for path in sorted((MODS_DIR / mod / "src").glob("*/resources/*.mixins.json")):
+            config = load_json(path, rel(path), problems)
+            if config is not None and config.get("compatibilityLevel") != "JAVA_${java_version}":
+                problems.append(f"{rel(path)}: compatibilityLevel は JAVA_${{java_version}} にする（{config.get('compatibilityLevel')}）")
         if not (ROOT / "docs" / "mods" / f"{mod}.md").is_file():
             problems.append(f"docs/mods/{mod}.md がない")
         if f"[{mod}](mods/{mod})" not in readme:
@@ -706,6 +711,24 @@ def check_mod_json(data, where, mod, problems):
     return meta
 
 
+def mixin_configs(meta):
+    """fabric.mod.json の mixins に並ぶ設定ファイルの名前（文字列か {"config": ...}）"""
+    return [entry if isinstance(entry, str) else entry.get("config") for entry in (meta or {}).get("mixins", [])]
+
+
+def check_mixins(archive, where, meta, problems):
+    """jar の mixins.json。compatibilityLevel を gradle.properties の java_version で埋めてあるか"""
+    expected = f"JAVA_{root_property('java_version')}"
+    names = set(archive.namelist())
+    for name in mixin_configs(meta):
+        if name not in names:
+            problems.append(f"{where}: fabric.mod.json の mixins にある {name} が入っていない")
+            continue
+        config = load_json(archive.read(name), f"{where}!{name}", problems, built=True)
+        if config is not None and config.get("compatibilityLevel") != expected:
+            problems.append(f"{where}!{name}: compatibilityLevel が {config.get('compatibilityLevel')}（{expected} のはず）")
+
+
 def check_jar(mod, problems):
     """組み上がった jar。jori は同梱した jar の一覧と中身も見る"""
     jar = jar_path(mod)
@@ -715,6 +738,7 @@ def check_jar(mod, problems):
     with zipfile.ZipFile(jar) as archive:
         names = set(archive.namelist())
         meta = check_mod_json(archive.read("fabric.mod.json"), f"{jar.name}!fabric.mod.json", mod, problems)
+        check_mixins(archive, jar.name, meta, problems)
         for lang in ("en_us", "ja_jp"):
             path = f"assets/{mod}/lang/{lang}.json"
             if path not in names:
@@ -732,7 +756,8 @@ def check_jar(mod, problems):
                 problems.append(f"{jar.name}: {path} が入っていない")
                 continue
             with zipfile.ZipFile(io.BytesIO(archive.read(path))) as nested:
-                check_mod_json(nested.read("fabric.mod.json"), f"{jar.name}!{path}!fabric.mod.json", inner, problems)
+                inner_meta = check_mod_json(nested.read("fabric.mod.json"), f"{jar.name}!{path}!fabric.mod.json", inner, problems)
+                check_mixins(nested, f"{jar.name}!{path}", inner_meta, problems)
 
 
 def build_jars(mods):
