@@ -1,8 +1,0 @@
-fabricApi {
-	configureTests {
-		createSourceSet = true
-		modId = "timber-gametest"
-		enableGameTests = true
-		enableClientGameTests = false
-	}
-}
