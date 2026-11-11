@@ -1,5 +1,8 @@
 package com.omuraisu.xray.test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.function.IntPredicate;
 
@@ -44,6 +47,7 @@ public class XrayClientGameTest implements FabricClientGameTest {
 
 	@Override
 	public void runTest(ClientGameTestContext context) {
+		testConfig(context);
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			singleplayer.getConnection().waitForChunksRender();
 
@@ -235,6 +239,23 @@ public class XrayClientGameTest implements FabricClientGameTest {
 			assertState(context, false, XrayMode.ENTITIES);
 			waitForRender(context, singleplayer);
 			assertEntityRendered(context, scene.chicken(), false);
+		}
+	}
+
+	// config/xray.txt は行ごとに読む。知らない行が混ざっていてもモードを読め、書いていない・知らないモードなら全鉱石
+	private static void testConfig(ClientGameTestContext context) {
+		try {
+			Files.writeString(XrayClient.CONFIG, "# memo\nfuture_option=3\n mode = diamond \nbroken line\n");
+			context.runOnClient(client -> XrayClient.load());
+			Asserts.assertEquals("mode among unknown lines", XrayMode.DIAMOND, XrayClient.mode());
+			Files.writeString(XrayClient.CONFIG, "future_option=3\n");
+			context.runOnClient(client -> XrayClient.load());
+			Asserts.assertEquals("mode without the line", XrayMode.ALL, XrayClient.mode());
+			Files.writeString(XrayClient.CONFIG, "mode=nothing\n");
+			context.runOnClient(client -> XrayClient.load());
+			Asserts.assertEquals("unknown mode", XrayMode.ALL, XrayClient.mode());
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
 		}
 	}
 

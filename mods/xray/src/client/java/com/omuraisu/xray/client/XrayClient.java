@@ -3,8 +3,12 @@ package com.omuraisu.xray.client;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+
+import org.slf4j.Logger;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.logging.LogUtils;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -19,7 +23,9 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
 public class XrayClient implements ClientModInitializer {
-	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("xray.txt");
+	public static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("xray.txt");
+
+	private static final Logger LOGGER = LogUtils.getLogger();
 
 	// これ以上押し続けるとホイールを開く（0.4 秒）。短いと、単押しのつもりでもホイールが開いてしまう
 	public static final int HOLD_TICKS = 8;
@@ -36,7 +42,7 @@ public class XrayClient implements ClientModInitializer {
 
 	@Override
 	public void onInitializeClient() {
-		mode = load();
+		load();
 
 		toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping(
 				"key.xray.toggle",
@@ -134,18 +140,30 @@ public class XrayClient implements ClientModInitializer {
 		}
 	}
 
-	private static XrayMode load() {
+	// config/xray.txt に 1 行 1 つ「キー=値」。いまの項目は mode だけ。知らない行は無視するので、項目を足しても前の値を読める。
+	// 読めないとき・書いていないとき・知らないモードは全鉱石
+	public static void load() {
+		mode = XrayMode.ALL;
+		List<String> lines;
 		try {
-			return XrayMode.byId(Files.readString(CONFIG).strip().replace("mode=", ""));
+			lines = Files.readAllLines(CONFIG);
 		} catch (IOException e) {
-			return XrayMode.ALL;
+			return;
+		}
+		for (String line : lines) {
+			int separator = line.indexOf('=');
+			if (separator > 0 && line.substring(0, separator).strip().equals("mode")) {
+				mode = XrayMode.byId(line.substring(separator + 1).strip());
+			}
 		}
 	}
 
+	// 書けなくても遊ぶのには困らないが、黙って捨てずにログに出す
 	private static void save() {
 		try {
 			Files.writeString(CONFIG, "mode=" + mode.id + "\n");
-		} catch (IOException ignored) {
+		} catch (IOException e) {
+			LOGGER.warn("Failed to save {}: {}", CONFIG, e.toString());
 		}
 	}
 }
