@@ -23,7 +23,8 @@ python tools/dev.py doctor
 python tools/dev.py test --plan              # 何をなぜ走らせるかだけ出す
 python tools/dev.py test                     # 上流のブランチから変わった mod
 python tools/dev.py test minimap --scenario map   # クライアントのゲームテストをシナリオで絞る
-python tools/dev.py test --all --no-sodium   # 全 mod をバニラ描画で
+python tools/dev.py test --all --no-sodium   # 全 mod をバニラ描画だけで
+python tools/dev.py test xray --no-vanilla   # 描画にフックする mod でも、バニラ描画の 2 回目を飛ばす
 ```
 
 - 対象は、比べる先からの差分・コミットしていない変更・追跡していないファイルで決める
@@ -37,15 +38,20 @@ python tools/dev.py test --all --no-sodium   # 全 mod をバニラ描画で
   - 時間切れのクライアントだけを 1 つずつ走らせ直し、その回の結果だけで決める。テストの失敗は走らせ直さない
   - 最後に、check と同じソースどうしの食い違い（言語ファイルのキー・jori の一覧など）も確かめ、あれば NG
 - `--scenario` は `-Pscenarios=...` になり、testkit の `Scenario` が名前の合わないシナリオを飛ばす。修正の途中は関わるシナリオだけを回し、コミットの前にはシナリオを付けずに走らせる。シナリオの名前は `docs/mods/<mod>.md` のゲームテストの節にある
+- 描画にフックする mod（`mods/<mod>/gradle.properties` に `vanilla_render_test=true`。いまは xray・fullbright・minimap）は、Sodium + Iris でビルドとすべてのテストを走らせた後に、バニラ描画（`-PnoSodium`）でもう一度クライアントのテストを走らせる。両方が通ってはじめて OK
+  - Sodium が置き換える経路とバニラの経路の両方にフックしているので、片方だけでは、もう片方で壊れたことに気づけない。ふだん遊ぶのは Sodium + Iris なので、そちらを先に走らせる
+  - `--no-sodium` ならバニラ描画だけ（2 回目はない）。`--no-vanilla` で 2 回目を飛ばす（修正の途中に。コミットの前は飛ばさない）
+  - 2 回目は Gradle を別に走らせる（`-PnoSodium` はビルド全体の設定なので、1 回の Gradle で両方は走らせられない）。時間切れの走らせ直しは回ごとに行う
+  - ゲームのログとスクリーンショットは 2 回目で上書きされるので、1 回目の失敗の中身とスクリーンショットは 1 回目が終わったときに読んで写しておく。2 回目の前には、ゲームの実行フォルダのスクリーンショットを消す（2 回目が走らなかったときに 1 回目のものが混ざらないように）
 
 ### 結果の見方
 
 | ファイル | 中身 |
 |---|---|
-| 画面の最後 | mod ごとに 1 行。失敗なら例外とこのリポジトリのスタックの行 |
-| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成・Gradle の各回の終了コードとタスクの結果・mod ごとの結果・成果物の場所。直近の 30 回を残す |
+| 画面の最後 | mod ごとに 1 行。2 回目にバニラ描画で走らせた mod は「バニラ描画」の結果も同じ行に出す。失敗なら例外とこのリポジトリのスタックの行（2 回目の分は頭に「（バニラ描画）」） |
+| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成（`plan.passes`）・Gradle の各回の終了コードとタスクの結果と描画の構成（`attempts`）・mod ごとの結果（`client` は 1 回目、`vanilla` はバニラ描画の 2 回目）・成果物の場所。直近の 30 回を残す |
 | `build/dev/report.html` | 結果の表とすべてのスクリーンショット（人が見る用） |
-| `build/dev/sheets/<mod>-<n>.png` | スクリーンショットを 20 枚ずつ並べた画像。見た目はまずこれを Read する |
+| `build/dev/sheets/<mod>-<n>.png` | スクリーンショットを 20 枚ずつ並べた画像。見た目はまずこれを Read する。バニラ描画の 2 回目の分は `<mod>-vanilla-<n>.png`（写しは `build/dev/screenshots/<mod>-vanilla/`） |
 | `build/dev/gradle.log` | Gradle の出力すべて（各回の終わりに終了コード） |
 | `mods/<mod>/build/run/clientGameTest/logs/latest.log` | クライアントのゲームテストのゲームのログ |
 | `mods/<mod>/build/run/gameTest/logs/latest.log` | サーバーのゲームテストのゲームのログ |

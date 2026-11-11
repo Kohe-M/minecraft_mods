@@ -12,7 +12,7 @@ minecraft_mods/
 ├─ testkit/java/        全 mod の gametest に一緒にコンパイルする道具
 ├─ docs/                仕様と仕組み
 └─ mods/<mod>/
-   ├─ gradle.properties mod_version と、走らせるゲームテスト（server_gametest・client_gametest）
+   ├─ gradle.properties mod_version と、走らせるゲームテスト（server_gametest・client_gametest・vanilla_render_test）
    ├─ build.gradle      その mod だけの設定（あれば。Sodium・Iris の API の参照、jori の同梱）
    └─ src/
 ```

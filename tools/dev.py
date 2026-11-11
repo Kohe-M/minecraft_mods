@@ -35,6 +35,12 @@ SHARED_PATHS = ("build.gradle", "settings.gradle", "gradle.properties", "gradle/
 TEST_SHARED_PATHS = ("testkit/",)
 # port は版を変えずに、いまの MC のタグを付ける（MC の移植）
 LEVELS = ("port", "patch", "minor", "major")
+# 描画の構成。ふだんは Sodium + Iris で、描画にフックする mod はバニラ描画（-PnoSodium）でも確かめる
+SODIUM = "sodium+iris"
+VANILLA = "vanilla"
+RENDER_NAMES = {SODIUM: "Sodium + Iris", VANILLA: "バニラ"}
+# バニラ描画で 2 回目に走らせたときのスクリーンショットの置き場所と一覧の画像は <mod>-vanilla
+VANILLA_LABEL = "-vanilla"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -76,6 +82,11 @@ def mod_property(mod, name):
 def has_client_tests(mod):
     """クライアントのゲームテストがあるか。ルートの build.gradle と同じく mods/<mod>/gradle.properties の client_gametest を見る"""
     return mod_property(mod, "client_gametest") == "true"
+
+
+def vanilla_render_test(mod):
+    """描画にフックする mod か（mods/<mod>/gradle.properties の vanilla_render_test）。test は Sodium の後にバニラ描画でもクライアントのテストを走らせる"""
+    return mod_property(mod, "vanilla_render_test") == "true"
 
 
 def mod_version(mod, ref=None):
@@ -317,28 +328,34 @@ def compile_errors(mod, lines):
 
 # ---- スクリーンショット ----
 
+def screenshot_folder(mod):
+    return MODS_DIR / mod / "build" / "run" / "clientGameTest" / "screenshots"
+
+
 def screenshots(mod):
-    folder = MODS_DIR / mod / "build" / "run" / "clientGameTest" / "screenshots"
+    folder = screenshot_folder(mod)
     return sorted(folder.glob("*.png")) if folder.is_dir() else []
 
 
+def copy_shots(mod, label):
+    """スクリーンショットを build/dev/screenshots/<label> に写す（次のテストや次の描画の構成で消えるため）"""
+    files = screenshots(mod)
+    target = OUT / "screenshots" / label
+    shutil.rmtree(target, ignore_errors=True)
+    if not files:
+        return []
+    target.mkdir(parents=True)
+    for file in files:
+        shutil.copy2(file, target / file.name)
+    return [target / file.name for file in files]
+
+
 def collect_shots(mods):
-    """スクリーンショットを build/dev に写し（次のテストで消えるため）、一覧の画像と HTML を作る"""
-    shots = {}
+    """いまあるスクリーンショットを写し、一覧の画像を作る"""
     shutil.rmtree(OUT / "screenshots", ignore_errors=True)
-    for mod in mods:
-        files = screenshots(mod)
-        if not files:
-            continue
-        target = OUT / "screenshots" / mod
-        target.mkdir(parents=True)
-        copied = []
-        for file in files:
-            shutil.copy2(file, target / file.name)
-            copied.append(target / file.name)
-        shots[mod] = copied
-    sheets = make_sheets(shots)
-    return shots, sheets
+    shots = {mod: copy_shots(mod, mod) for mod in mods}
+    shots = {label: files for label, files in shots.items() if files}
+    return shots, make_sheets(shots)
 
 
 SHEET_COLUMNS = 4
@@ -383,23 +400,29 @@ def make_sheets(shots):
     return sheets
 
 
-def write_report(results, shots, title, errors=()):
+def shot_title(label):
+    return f"{label[:-len(VANILLA_LABEL)]}（バニラ描画）" if label.endswith(VANILLA_LABEL) else label
+
+
+def write_report(results, shots, title, errors=(), render=SODIUM):
     rows = []
     for result in results:
         mod = result["mod"]
         status = "OK" if result["ok"] else "NG"
         detail = "<br>".join(html.escape(line) for line in result["detail"])
         rows.append(f"<tr class='{status}'><td>{mod}</td><td>{html.escape(result['build'])}</td><td>{html.escape(result['client'])}</td>"
-                    f"<td>{len(shots.get(mod, []))}</td><td><code>{detail}</code></td></tr>")
-    table = (f"<table><tr><th>mod</th><th>ビルド</th><th>クライアントのテスト</th><th>画面</th><th>失敗の中身</th></tr>{''.join(rows)}</table>"
+                    f"<td>{html.escape(result['vanilla'])}</td><td>{len(shots.get(mod, []))} / {len(shots.get(mod + VANILLA_LABEL, []))}</td>"
+                    f"<td><code>{detail}</code></td></tr>")
+    table = (f"<table><tr><th>mod</th><th>ビルド</th><th>クライアント（{RENDER_NAMES[render]}）</th><th>クライアント（バニラ描画で 2 回目）</th>"
+             f"<th>画面</th><th>失敗の中身</th></tr>{''.join(rows)}</table>"
              if results else "")
     gradle_errors = "".join(f"<pre class='NG'>{html.escape(chr(10).join(lines))}</pre>" for lines in errors)
     sections = []
-    for mod, files in shots.items():
+    for label, files in shots.items():
         figures = "".join(
-            f"<figure><a href='screenshots/{mod}/{f.name}'><img loading='lazy' src='screenshots/{mod}/{f.name}'></a>"
+            f"<figure><a href='screenshots/{label}/{f.name}'><img loading='lazy' src='screenshots/{label}/{f.name}'></a>"
             f"<figcaption>{html.escape(f.stem)}</figcaption></figure>" for f in files)
-        sections.append(f"<h2 id='{mod}'>{mod}</h2><div class='grid'>{figures}</div>")
+        sections.append(f"<h2 id='{label}'>{html.escape(shot_title(label))}</h2><div class='grid'>{figures}</div>")
     page = f"""<!doctype html><meta charset="utf-8"><title>{html.escape(title)}</title>
 <style>
 body{{font-family:system-ui,sans-serif;background:#16181d;color:#e6e6e6;margin:24px}}
@@ -434,30 +457,49 @@ def plan_test(args):
         reasons = select_mods(changed_files(base))
     mods = list(reasons)
     client_mods = [] if args.no_client else [m for m in mods if has_client_tests(m)]
+    render = VANILLA if args.no_sodium else SODIUM
     plan = {
         "base": base,
         "base_commit": git("rev-parse", "--short", base).strip() if base else None,
         "reasons": reasons,
         "mods": mods,
         "client_mods": client_mods,
-        "render": "vanilla" if args.no_sodium else "sodium+iris",
+        "render": render,
         "scenarios": args.scenario or [],
         "slots": args.slots,
         "timeout": args.timeout,
-        "tasks": [f":{m}:build" for m in mods] + [f":{m}:runClientGameTest" for m in client_mods],
     }
-    plan["options"] = gradle_options(plan)
+    # 1 回目はビルドとすべてのテスト。描画にフックする mod は、2 回目にバニラ描画でクライアントのテストだけを走らせる
+    plan["passes"] = [{
+        "render": render,
+        "client_mods": client_mods,
+        "tasks": [f":{m}:build" for m in mods] + [f":{m}:runClientGameTest" for m in client_mods],
+        "options": gradle_options(plan, render),
+    }]
+    vanilla_mods = [] if render == VANILLA or args.no_vanilla else [m for m in client_mods if vanilla_render_test(m)]
+    if vanilla_mods:
+        plan["passes"].append({
+            "render": VANILLA,
+            "client_mods": vanilla_mods,
+            "tasks": [f":{m}:runClientGameTest" for m in vanilla_mods],
+            "options": gradle_options(plan, VANILLA),
+        })
     return plan
 
 
-def gradle_options(plan, slots=None):
-    """gradle に渡すオプション。走らせ直しで変わるもの（同時に起動する数）は名前で受け取って組み立てる"""
+def gradle_options(plan, render, slots=None):
+    """gradle に渡すオプション。描画の構成と、走らせ直しで変わるもの（同時に起動する数）は名前で受け取って組み立てる"""
     options = [f"-PclientSlots={slots or plan['slots']}", f"-PclientTimeout={plan['timeout']}"]
-    if plan["render"] == "vanilla":
+    if render == VANILLA:
         options.append("-PnoSodium")
     if plan["scenarios"]:
         options.append(f"-Pscenarios={','.join(plan['scenarios'])}")
     return options
+
+
+def vanilla_mods(plan):
+    """2 回目にバニラ描画でクライアントのテストを走らせる mod"""
+    return [m for step in plan["passes"][1:] for m in step["client_mods"]]
 
 
 def print_plan(plan, command=True):
@@ -468,15 +510,58 @@ def print_plan(plan, command=True):
         return
     width = max(len(m) for m in plan["mods"])
     for mod in plan["mods"]:
-        client = "クライアントも" if mod in plan["client_mods"] else "ビルドのみ"
+        client = "ビルドのみ"
+        if mod in plan["client_mods"]:
+            client = "クライアントも（バニラ描画でも）" if mod in vanilla_mods(plan) else "クライアントも"
         print(f"  {mod:<{width}}  {client:<8} {'、'.join(plan['reasons'][mod])}")
-    print(f"描画: {'Sodium + Iris' if plan['render'] == 'sodium+iris' else 'バニラ'}"
+    print(f"描画: {RENDER_NAMES[plan['render']]}"
+          + ("、描画にフックする mod はバニラでも" if vanilla_mods(plan) else "")
           + (f"  シナリオ: {', '.join(plan['scenarios'])}" if plan["scenarios"] else ""))
     if command:
-        print("$ gradlew " + " ".join(plan["tasks"] + plan["options"]))
+        for step in plan["passes"]:
+            print("$ gradlew " + " ".join(step["tasks"] + step["options"]))
 
 
-def mod_result(mod, plan, main, retry, retried):
+def run_pass(plan, step, log, no_retry, label):
+    """1 つの描画の構成で gradle を走らせる。起動の途中で止まって時間切れになったクライアントだけ、1 つずつ走らせ直す。
+    ゲームのログとスクリーンショットは次の回で上書きされるので、クライアントの結果はここですぐ読む。
+    スクリーンショットは build/dev/screenshots/<mod><label> に写す"""
+    main = run_gradle(step["tasks"], step["options"], log)
+    retry = None
+    retried = set()
+    hung = [m for m in step["client_mods"] if f":{m}:runClientGameTest" in main.timed_out]
+    if hung and not no_retry:
+        print(f"時間切れ: {', '.join(hung)}。1 つずつ走らせ直す", flush=True)
+        retry = run_gradle([f":{m}:runClientGameTest" for m in hung], gradle_options(plan, step["render"], slots=1), log)
+        retried = set(hung)
+    clients = {}
+    shots = {}
+    for mod in step["client_mods"]:
+        # 走らせ直したものは、走らせ直した回の結果だけで決める
+        attempt = retry if mod in retried else main
+        clients[mod] = client_result(mod, attempt, mod in retried)
+        # 走らなかった mod の画面は前回のものなので出さない
+        if attempt.ran(f":{mod}:runClientGameTest"):
+            files = copy_shots(mod, mod + label)
+            if files:
+                shots[mod + label] = files
+    return {"render": step["render"], "attempts": [a for a in (main, retry) if a], "main": main, "clients": clients, "shots": shots}
+
+
+def client_result(mod, attempt, retried):
+    task = f":{mod}:runClientGameTest"
+    if task in attempt.timed_out:
+        return {"status": "時間切れ", "detail": client_failure(mod)}
+    if task in attempt.failed:
+        return {"status": "NG", "detail": client_failure(mod)}
+    if not attempt.ran(task):
+        return {"status": "走らず", "detail": []}
+    return {"status": "OK（時間切れの後に走らせ直し）" if retried else "OK", "detail": []}
+
+
+def mod_result(mod, passes):
+    """ビルドは 1 回目、クライアントは描画の構成ごとの結果"""
+    main = passes[0]["main"]
     build_task = f":{mod}:build"
     client_task = f":{mod}:runClientGameTest"
     failed = sorted(t for t in main.failed if t.startswith(f":{mod}:") and t != client_task)
@@ -491,22 +576,16 @@ def mod_result(mod, plan, main, retry, retried):
     else:
         build = "走らず"
 
-    # 走らせ直したものは、走らせ直した回の結果だけで決める
-    attempt = retry if mod in retried else main
-    if mod not in plan["client_mods"]:
-        client = "-"
-    elif client_task in attempt.timed_out:
-        client = "時間切れ"
-        detail += client_failure(mod)
-    elif client_task in attempt.failed:
-        client = "NG"
-        detail += client_failure(mod)
-    elif not attempt.ran(client_task):
-        client = "走らず"
-    else:
-        client = "OK（時間切れの後に走らせ直し）" if mod in retried else "OK"
-    ok = build == "OK" and (client == "-" or client.startswith("OK"))
-    return {"mod": mod, "build": build, "client": client, "ok": ok, "detail": detail}
+    statuses = []
+    for index, run in enumerate(passes):
+        client = run["clients"].get(mod)
+        statuses.append(client["status"] if client else "-")
+        if client:
+            prefix = "" if index == 0 else f"（{RENDER_NAMES[run['render']]}描画）"
+            detail += [prefix + line for line in client["detail"]]
+    client, vanilla = statuses[0], (statuses[1] if len(statuses) > 1 else "-")
+    ok = build == "OK" and all(s == "-" or s.startswith("OK") for s in (client, vanilla))
+    return {"mod": mod, "build": build, "client": client, "vanilla": vanilla, "ok": ok, "detail": detail}
 
 
 def write_run(record):
@@ -541,29 +620,27 @@ def command_test(args):
         "plan": plan,
     }
 
-    main = run_gradle(plan["tasks"], plan["options"], log)
-    attempts = [main]
+    # 描画の構成ごとに走らせる。テストの失敗は走らせ直さない
+    shutil.rmtree(OUT / "screenshots", ignore_errors=True)
+    passes = []
+    for index, step in enumerate(plan["passes"]):
+        if index:
+            print(f"{RENDER_NAMES[step['render']]}描画でクライアントのテストを走らせる: {', '.join(step['client_mods'])}", flush=True)
+            # 前の構成の画面が残っていると、走らなかったときに混ざる
+            for mod in step["client_mods"]:
+                shutil.rmtree(screenshot_folder(mod), ignore_errors=True)
+        passes.append(run_pass(plan, step, log, args.no_retry, VANILLA_LABEL if index else ""))
+    attempts = [a for run in passes for a in run["attempts"]]
 
-    # 起動の途中で止まって時間切れになったものだけ、1 つずつ走らせ直す。テストの失敗は走らせ直さない
-    retry = None
-    retried = set()
-    hung = [m for m in plan["client_mods"] if f":{m}:runClientGameTest" in main.timed_out]
-    if hung and not args.no_retry:
-        print(f"時間切れ: {', '.join(hung)}。1 つずつ走らせ直す", flush=True)
-        retry = run_gradle([f":{m}:runClientGameTest" for m in hung], gradle_options(plan, slots=1), log)
-        attempts.append(retry)
-        retried = set(hung)
-
-    results = [mod_result(mod, plan, main, retry, retried) for mod in plan["mods"]]
+    results = [mod_result(mod, passes) for mod in plan["mods"]]
     # タスクの外で落ちた（設定の段階・デーモンの起動など）ときは、どのタスクも OK にできない
     errors = [a.what_went_wrong() for a in attempts if a.unexplained()]
     # ソースどうしの食い違い（言語ファイルのキー・jori の一覧など）は数秒で分かるので、いつも確かめる
     problems = check_sources()
 
-    # 走らなかった mod の画面は前回のものなので出さない
-    final = {m: (retry if m in retried else main) for m in plan["client_mods"]}
-    shots, sheets = collect_shots([m for m in plan["client_mods"] if final[m].ran(f":{m}:runClientGameTest")])
-    report = write_report(results, shots, "テストの結果", errors + ([problems] if problems else []))
+    shots = {label: files for run in passes for label, files in run["shots"].items()}
+    sheets = make_sheets(shots)
+    report = write_report(results, shots, "テストの結果", errors + ([problems] if problems else []), plan["render"])
     ok = not errors and not problems and all(r["ok"] for r in results)
 
     print()
@@ -578,30 +655,37 @@ def command_test(args):
     width = max(len(m) for m in plan["mods"])
     for result in results:
         mark = "✓" if result["ok"] else "✗"
-        count = len(shots.get(result["mod"], []))
-        print(f"{mark} {result['mod']:<{width}}  ビルド {result['build']:<4}  クライアント {result['client']}  画面 {count}")
-        for line in result["detail"]:
-            print(f"    {line}")
+        mod = result["mod"]
+        line = f"{mark} {mod:<{width}}  ビルド {result['build']:<4}  クライアント {result['client']}"
+        if result["vanilla"] != "-":
+            line += f"  バニラ描画 {result['vanilla']}"
+        line += f"  画面 {len(shots.get(mod, []))}"
+        if mod + VANILLA_LABEL in shots:
+            line += f" + {len(shots[mod + VANILLA_LABEL])}"
+        print(line)
+        for detail in result["detail"]:
+            print(f"    {detail}")
 
     record.update({
         "seconds": round(time.time() - started, 1),
         "ok": ok,
-        "attempts": [a.record() for a in attempts],
+        "attempts": [dict(a.record(), render=run["render"]) for run in passes for a in run["attempts"]],
         "errors": errors,
         "source_problems": problems,
-        "results": [dict(r, screenshots=len(shots.get(r["mod"], []))) for r in results],
+        "results": [dict(r, screenshots=len(shots.get(r["mod"], [])), vanilla_screenshots=len(shots.get(r["mod"] + VANILLA_LABEL, [])))
+                    for r in results],
         "artifacts": {
             "log": rel(log),
             "report": rel(report),
-            "screenshots": {m: rel(OUT / "screenshots" / m) for m in shots},
-            "sheets": {m: [rel(f) for f in files] for m, files in sheets.items()},
+            "screenshots": {label: rel(OUT / "screenshots" / label) for label in shots},
+            "sheets": {label: [rel(f) for f in files] for label, files in sheets.items()},
         },
     })
     run = write_run(record)
     print()
     print(f"{int(time.time() - started)} 秒。ログ: {rel(log)}  一覧: {rel(report)}  記録: {rel(run)}")
-    for mod, files in sheets.items():
-        print(f"  {mod}: " + " ".join(rel(f) for f in files))
+    for label, files in sheets.items():
+        print(f"  {label}: " + " ".join(rel(f) for f in files))
     return 0 if ok else 1
 
 
@@ -1024,7 +1108,8 @@ def main():
     test.add_argument("--base", help="変わったかを比べる先（既定は上流のブランチ）")
     test.add_argument("--plan", action="store_true", help="何をなぜ走らせるかだけ出す")
     test.add_argument("--scenario", action="append", default=[], help="クライアントのゲームテストのシナリオを絞る（何度でも。mod の文書を見る）")
-    test.add_argument("--no-sodium", action="store_true", help="Sodium / Iris を入れずにバニラ描画で走らせる")
+    test.add_argument("--no-sodium", action="store_true", help="Sodium / Iris を入れずにバニラ描画だけで走らせる")
+    test.add_argument("--no-vanilla", action="store_true", help="描画にフックする mod でも、バニラ描画の 2 回目を走らせない")
     test.add_argument("--no-client", action="store_true", help="クライアントのゲームテストを走らせない")
     test.add_argument("--no-retry", action="store_true", help="時間切れのクライアントを走らせ直さない")
     test.add_argument("--slots", type=int, default=3, help="同時に起動するクライアントの数（既定 3）")

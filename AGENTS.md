@@ -46,6 +46,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 
 1. 実装する。修正の途中は `python tools/dev.py test <mod> --scenario <名前>` で関わるシナリオだけを回してよい
 2. `python tools/dev.py test` で、変更した mod のビルドとゲームテスト（server・client）を通す。シナリオで絞らずに走らせる
+   - 描画にフックする mod（`gradle.properties` に `vanilla_render_test=true`）は、Sodium + Iris の後にバニラ描画でもクライアントのテストが走る。両方を通す（`--no-vanilla` で飛ばさない）
 3. コミットメッセージのルールに沿ってコミットする
 4. mod を変更したら、変更した mod と、それを同梱する jori の jar をローカルで作って確かめる
    - 通常は `python tools/dev.py check --build` に対象の mod 名を渡す（例: `python tools/dev.py check --build minimap jori`）
@@ -119,7 +120,8 @@ python tools/dev.py test                 # 上流のブランチから変わっ�
 python tools/dev.py test sorter jori     # mod を指定する
 python tools/dev.py test minimap --scenario map   # クライアントのゲームテストをシナリオで絞る
 python tools/dev.py test --all           # 全 mod
-python tools/dev.py test --no-sodium     # Sodium / Iris を入れずにバニラ描画で
+python tools/dev.py test --no-sodium     # Sodium / Iris を入れずにバニラ描画だけで
+python tools/dev.py test --no-vanilla    # 描画にフックする mod の、バニラ描画の 2 回目を飛ばす（修正の途中に）
 python tools/dev.py check --build        # jar を作り、ソースと jar の食い違い（言語ファイル・jori の同梱・文字化け）を確かめる
 python tools/dev.py shots                # いまあるスクリーンショットを一覧にまとめ直す
 ./gradlew build                          # ビルド + server ゲームテスト（sorter, timber）
@@ -131,7 +133,7 @@ python tools/dev.py shots                # いまあるスクリーンショッ�
 - 合否は Gradle の終了コードとタスクの結果で決める。結果は最後に mod ごとに 1 行で出る。失敗したら、例外とこのリポジトリのスタックの行も出す
   - `build/dev/last-run.json`: 実行の記録（コミット・対象と選んだわけ・各回の結果・成果物の場所）。前の結果を引き継ぐときは、まずこれのコミットを確かめる
   - `build/dev/report.html`: 結果の表とすべてのスクリーンショット（人が見る用）
-  - `build/dev/sheets/<mod>-<n>.png`: スクリーンショットを 20 枚ずつ 1 枚に並べた画像。見た目はまずこれを Read して確かめる
+  - `build/dev/sheets/<mod>-<n>.png`: スクリーンショットを 20 枚ずつ 1 枚に並べた画像。見た目はまずこれを Read して確かめる（バニラ描画の 2 回目の分は `<mod>-vanilla-<n>.png`）
   - `build/dev/gradle.log`: gradle の出力すべて
   - 失敗の種類ごとに見るところは [docs/development.md](docs/development.md)
 - client ゲームテストは同時に 3 つまで起動する（`-PclientSlots=N`）。一度に多く起動すると、どれかが起動の途中で止まることがあるため
@@ -177,4 +179,5 @@ Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動�
   - Sodium の API は `compileOnly "maven.modrinth:sodium:${sodium_version}"` で参照する
 - Iris でシェーダーパックを有効にしても、表示が崩れたり効果が消えたりしないようにする
 - 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（ルートの `build.gradle` が全 mod に入れる。Sodium の API を参照する例は `mods/xray/build.gradle`）
+- 描画にフックする mod は `mods/<mod>/gradle.properties` に `vanilla_render_test=true` を置く。`dev.py test` がバニラ描画でもクライアントのテストを走らせる
 - Sodium・Iris のバージョンはルートの `gradle.properties` の `sodium_version`・`iris_version`。MC を上げたら一緒に上げる
