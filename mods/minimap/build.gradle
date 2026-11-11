@@ -1,29 +1,4 @@
-repositories {
-	maven {
-		name = "Modrinth"
-		url = "https://api.modrinth.com/maven"
-		content {
-			includeGroup "maven.modrinth"
-		}
-	}
-}
-
-fabricApi {
-	configureTests {
-		createSourceSet = true
-		modId = "minimap-gametest"
-		enableGameTests = false
-		enableClientGameTests = true
-	}
-}
-
 dependencies {
 	// ゲームテストでシェーダーパックを切り替える
 	gametestCompileOnly "maven.modrinth:iris:${iris_version}"
-	// HUD の描画なので Sodium / Iris には手を入れない。動作確認用に入れるだけ
-	// -PnoSodium でバニラ描画のまま起動できる
-	if (!project.hasProperty("noSodium")) {
-		localRuntime "maven.modrinth:sodium:${sodium_version}"
-		localRuntime "maven.modrinth:iris:${iris_version}"
-	}
 }
