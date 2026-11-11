@@ -22,7 +22,7 @@ import net.minecraft.world.level.chunk.ImposterProtoChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
 // 次元ごとの、地図の地形の状態。チャンクの版（リージョンファイルのヘッダー・メモリの変化）、下書き、生成しているチャンク、生成の順番。
-// メインスレッドでだけ触る（自前のスレッドの仕事は TerrainWorkers.complete で結果を返す）
+// メインスレッドでだけ触る（自前のスレッドの仕事は TerrainWorkers.run の後始末で結果を受け取る）
 final class TerrainLevel {
 	// メモリから外れたチャンクが書かれる（ヘッダーの版が変わる）のを待つ tick。保存を止めているサーバーでは書かれないので、いつまでも待たない
 	private static final int SAVE_WAIT_TICKS = 40;
@@ -108,14 +108,12 @@ final class TerrainLevel {
 		if (!entry.loading && (entry.header == null || now - entry.loaded >= maxAge)) {
 			entry.loading = true;
 			RegionReader reader = reader();
-			workers.submit(() -> {
-				RegionReader.Header header = reader.header(ChunkPos.getX(region), ChunkPos.getZ(region));
-				workers.complete(() -> {
-					entry.loading = false;
-					if (header != null) {
-						accept(region, header, level.getServer().getTickCount());
-					}
-				});
+			// 読めなくても（何で失敗しても）読んでいる印は外す。外さないと、そのリージョンのヘッダーを二度と読み直さない
+			workers.run(() -> reader.header(ChunkPos.getX(region), ChunkPos.getZ(region)), (header, failure) -> {
+				entry.loading = false;
+				if (header != null) {
+					accept(region, header, level.getServer().getTickCount());
+				}
 			});
 		}
 		return entry.header;

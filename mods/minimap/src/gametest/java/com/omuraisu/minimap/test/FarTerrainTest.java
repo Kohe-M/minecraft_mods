@@ -8,7 +8,9 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -19,6 +21,7 @@ import com.omuraisu.minimap.TerrainHave;
 import com.omuraisu.minimap.TerrainRegions;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.TerrainView;
+import com.omuraisu.minimap.TerrainWorkers;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.minimap.mixin.ChunkMapInvoker;
 import com.omuraisu.minimap.mixin.ChunkTaskDispatcherAccessor;
@@ -59,6 +62,7 @@ public class FarTerrainTest implements Scenario {
 	@Override
 	public void run(ClientGameTestContext context) {
 		watchFullLoads();
+		testWorkerFailures(context);
 		testConfig(context);
 
 		TestWorldSave save;
@@ -93,6 +97,43 @@ public class FarTerrainTest implements Scenario {
 		}
 
 		testNaturalTerrain(context);
+	}
+
+	// 自前のスレッドの仕事が何で失敗しても、後始末はメインスレッドの列に入る。後始末が抜けると、読み込みの予算や待っているチャンクの印が戻らない。
+	// 本物の読み込みで Error を起こすのは難しいので、TerrainWorkers を 1 つ作って確かめる
+	private static void testWorkerFailures(ClientGameTestContext context) {
+		TerrainWorkers workers = new TerrainWorkers();
+		// 後始末はこのスレッドの drain で動く
+		Map<String, String> finished = new HashMap<>();
+		try {
+			workers.run(() -> "colors", (result, failure) -> finished.put("returned", result + " / " + failure));
+			workers.run(() -> {
+				throw new IllegalStateException("broken chunk");
+			}, (result, failure) -> finished.put("runtime", result + " / " + failure.getClass().getSimpleName()));
+			workers.run(() -> {
+				throw new StackOverflowError();
+			}, (result, failure) -> finished.put("error", result + " / " + failure.getClass().getSimpleName()));
+			workers.run(() -> {
+				throw new NoSuchMethodError("changed by another mod");
+			}, (result, failure) -> finished.put("linkage", result + " / " + failure.getClass().getSimpleName()));
+			for (int i = 0; finished.size() < 4; i++) {
+				if (i >= 200) {
+					throw new AssertionError("finishes of the terrain workers should all arrive but only " + finished.keySet() + " did");
+				}
+				context.waitTick();
+				workers.drain();
+			}
+		} finally {
+			workers.close();
+		}
+		// 止めた後に渡した仕事も、動かせなかったことが後始末に届く
+		workers.run(() -> "late", (result, failure) -> finished.put("closed", result + " / " + failure.getClass().getSimpleName()));
+		workers.drain();
+		assertEquals("finish of a work that returned", "colors / null", finished.get("returned"));
+		assertEquals("finish of a work that threw a runtime exception", "null / IllegalStateException", finished.get("runtime"));
+		assertEquals("finish of a work that threw an error", "null / StackOverflowError", finished.get("error"));
+		assertEquals("finish of a work that threw a linkage error", "null / NoSuchMethodError", finished.get("linkage"));
+		assertEquals("finish of a work given after closing", "null / RejectedExecutionException", finished.get("closed"));
 	}
 
 	// マップ距離は config/minimap.txt。なければ既定の値で作り、範囲の外や壊れた値でも落ちない

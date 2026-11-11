@@ -403,27 +403,15 @@ public final class TerrainServer {
 				region.previewed = true;
 			} else if (state.previewing.size() < TerrainWorkers.COUNT && state.previewing.add(key)) {
 				TerrainPreviewer previewer = state.previewer;
-				workers.submit(() -> {
-					byte[] made;
-					Throwable failure = null;
-					try {
-						made = previewer.region(region.x, region.z);
-					} catch (RuntimeException | LinkageError e) {
-						made = null;
-						failure = e;
+				workers.run(() -> previewer.region(region.x, region.z), (made, failure) -> {
+					state.previewing.remove(key);
+					if (made == null) {
+						// ほかの mod が地形の作りを変えているなど。下書きなしで、生成した分だけを出す
+						LOGGER.warn("Failed to preview terrain of {}, previews are disabled", state.level.dimension().identifier(), failure);
+						state.previewer = null;
+					} else {
+						state.rememberPreview(key, made);
 					}
-					byte[] result = made;
-					Throwable error = failure;
-					workers.complete(() -> {
-						state.previewing.remove(key);
-						if (result == null) {
-							// ほかの mod が地形の作りを変えているなど。下書きなしで、生成した分だけを出す
-							LOGGER.warn("Failed to preview terrain of {}, previews are disabled", state.level.dimension().identifier(), error);
-							state.previewer = null;
-						} else {
-							state.rememberPreview(key, result);
-						}
-					});
 				});
 			}
 		}
@@ -574,23 +562,27 @@ public final class TerrainServer {
 		long key = chunk.getPos().pack();
 		TerrainViewer.Snapshot snapshot = viewer.snapshot();
 		viewer.pending.add(key);
-		workers.submit(() -> {
-			TerrainTile made;
-			try {
-				made = tile(chunk, stamp, ceiling, snapshot.feetY());
-			} catch (RuntimeException e) {
-				made = null;
+		workers.run(() -> tile(chunk, stamp, ceiling, snapshot.feetY()), (tile, failure) -> {
+			// 生成の途中のチャンクを別のスレッドが書き換えている間に読むと、RuntimeException になることがある。
+			// それは送らずに次の一巡に任せる。それ以外の失敗は思わぬものなのでログに出す
+			if (failure != null && !(failure instanceof RuntimeException)) {
+				logFailure("Failed to color terrain of chunk " + chunk.getPos(), failure);
 			}
-			TerrainTile tile = made;
-			workers.complete(() -> {
-				if (viewer.sameSession(snapshot)) {
-					viewer.pending.remove(key);
-				}
-				if (tile != null && viewer.accepts(snapshot)) {
-					viewer.deliver(tile);
-				}
-			});
+			if (viewer.sameSession(snapshot)) {
+				viewer.pending.remove(key);
+			}
+			if (tile != null && viewer.accepts(snapshot)) {
+				viewer.deliver(tile);
+			}
 		});
+	}
+
+	// 自前のスレッドの思わぬ失敗。同じ失敗でログが埋まらないよう、最初の 1 回だけ出す
+	private void logFailure(String message, Throwable failure) {
+		if (!failureLogged) {
+			failureLogged = true;
+			LOGGER.warn(message, failure);
+		}
 	}
 
 	// 同じリージョンのチャンクをまとめて読む。読むのも色にするのも自前のスレッド。メインスレッドは結果を送るだけ。
@@ -603,7 +595,7 @@ public final class TerrainServer {
 		TerrainViewer.Snapshot snapshot = viewer.snapshot();
 		pace.startReading(indexes.length);
 		reads.addAndGet(indexes.length);
-		workers.submit(() -> {
+		workers.run(() -> {
 			RegionReader.Header header = reader.header(regionX, regionZ);
 			TerrainTile[] tiles = new TerrainTile[indexes.length];
 			// 0: セーブにない、1: 色にできた、2: 地物を置き終えていない、3: 直接は読めなかった
@@ -630,37 +622,46 @@ public final class TerrainServer {
 					// vanilla の経路で読み直す
 				}
 			}
-			workers.complete(() -> {
-				pace.finishReading(indexes.length);
-				if (header != null) {
-					state.accept(regionKey, header, server.getTickCount());
+			return new ReadBatch(header, tiles, outcomes);
+		}, (batch, failure) -> {
+			pace.finishReading(indexes.length);
+			// まとめて失敗したら（RuntimeException でない Error など）、待っている印だけ外し、次の一巡で読み直す
+			if (failure != null) {
+				logFailure("Failed to read terrain of region " + regionX + ", " + regionZ, failure);
+			}
+			RegionReader.Header header = batch == null ? null : batch.header();
+			if (header != null) {
+				state.accept(regionKey, header, server.getTickCount());
+			}
+			if (!viewer.sameSession(snapshot)) {
+				return;
+			}
+			for (int i = 0; i < indexes.length; i++) {
+				int index = indexes[i];
+				ChunkPos pos = new ChunkPos(regionX * TerrainRegions.CHUNKS + index % TerrainRegions.CHUNKS,
+						regionZ * TerrainRegions.CHUNKS + index / TerrainRegions.CHUNKS);
+				long chunk = pos.pack();
+				viewer.pending.remove(chunk);
+				if (header == null) {
+					continue;
 				}
-				if (!viewer.sameSession(snapshot)) {
-					return;
-				}
-				for (int i = 0; i < indexes.length; i++) {
-					int index = indexes[i];
-					ChunkPos pos = new ChunkPos(regionX * TerrainRegions.CHUNKS + index % TerrainRegions.CHUNKS,
-							regionZ * TerrainRegions.CHUNKS + index / TerrainRegions.CHUNKS);
-					long chunk = pos.pack();
-					viewer.pending.remove(chunk);
-					if (header == null) {
-						continue;
+				int stamp = header.stamps()[index];
+				if (batch.outcomes()[i] == 1) {
+					// 読んでいる間に読み込まれていたら、セーブより新しいかもしれないので、次の一巡でメモリの方から送る
+					if (viewer.accepts(snapshot) && state.inMemory(chunk) == null) {
+						viewer.deliver(batch.tiles()[i]);
 					}
-					int stamp = header.stamps()[index];
-					if (outcomes[i] == 1) {
-						// 読んでいる間に読み込まれていたら、セーブより新しいかもしれないので、次の一巡でメモリの方から送る
-						if (viewer.accepts(snapshot) && state.inMemory(chunk) == null) {
-							viewer.deliver(tiles[i]);
-						}
-					} else if (outcomes[i] == 2) {
-						state.unready.put(chunk, stamp);
-					} else if (outcomes[i] == 3) {
-						readByVanilla(viewer, state, pos, stamp, ceiling);
-					}
+				} else if (batch.outcomes()[i] == 2) {
+					state.unready.put(chunk, stamp);
+				} else if (batch.outcomes()[i] == 3) {
+					readByVanilla(viewer, state, pos, stamp, ceiling);
 				}
-			});
+			}
 		});
+	}
+
+	// 自前のスレッドで読んだリージョンのヘッダー（読めなければ null）と、チャンクごとの色と結果
+	private record ReadBatch(RegionReader.Header header, TerrainTile[] tiles, byte[] outcomes) {
 	}
 
 	// 古い版のデータは、読み込むときと同じく新しい形に直る。それでも読めなければ、書き直されるまで読まない
@@ -671,34 +672,37 @@ public final class TerrainServer {
 		viewer.pending.add(chunk);
 		pace.startReading(1);
 		vanillaReads.incrementAndGet();
-		// 色にできたら色、地物を置き終えていなければ UNREADY、セーブになければ null
-		((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$readChunk(pos)
-				.thenApplyAsync(data -> {
-					if (data.isEmpty()) {
-						return null;
-					}
-					StoredChunk blocks = StoredChunk.read(level, data.get());
-					return blocks == null ? UNREADY : TerrainColors.tile(pos, blocks, ceiling, snapshot.feetY()).withStamp(stamp);
-				}, workers.executor())
-				.whenComplete((tile, error) -> workers.complete(() -> {
-					pace.finishReading(1);
-					if (error != null) {
-						state.failed.put(chunk, stamp);
-						if (!failureLogged) {
-							failureLogged = true;
-							LOGGER.warn("Failed to read terrain of chunk {}", pos, error);
+		// 色にできたら色、地物を置き終えていなければ UNREADY、セーブになければ null。
+		// 頼むところで投げても、失敗として同じ後始末を通す
+		CompletableFuture<TerrainTile> read;
+		try {
+			read = ((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$readChunk(pos)
+					.thenApplyAsync(data -> {
+						if (data.isEmpty()) {
+							return null;
 						}
-					} else if (tile == UNREADY) {
-						state.unready.put(chunk, stamp);
-					}
-					if (!viewer.sameSession(snapshot)) {
-						return;
-					}
-					viewer.pending.remove(chunk);
-					if (error == null && tile != null && tile != UNREADY && viewer.accepts(snapshot) && state.inMemory(chunk) == null) {
-						viewer.deliver(tile);
-					}
-				}));
+						StoredChunk blocks = StoredChunk.read(level, data.get());
+						return blocks == null ? UNREADY : TerrainColors.tile(pos, blocks, ceiling, snapshot.feetY()).withStamp(stamp);
+					}, workers.executor());
+		} catch (RuntimeException e) {
+			read = CompletableFuture.failedFuture(e);
+		}
+		workers.complete(read, (tile, error) -> {
+			pace.finishReading(1);
+			if (error != null) {
+				state.failed.put(chunk, stamp);
+				logFailure("Failed to read terrain of chunk " + pos, error);
+			} else if (tile == UNREADY) {
+				state.unready.put(chunk, stamp);
+			}
+			if (!viewer.sameSession(snapshot)) {
+				return;
+			}
+			viewer.pending.remove(chunk);
+			if (error == null && tile != null && tile != UNREADY && viewer.accepts(snapshot) && state.inMemory(chunk) == null) {
+				viewer.deliver(tile);
+			}
+		});
 	}
 
 	// 地図に要るのは地形と地物だけなので、光の計算やエンティティの読み込みをする FULL までは進めない（FEATURES のまま保存される）。
@@ -717,16 +721,16 @@ public final class TerrainServer {
 					.thenCompose(future -> future)
 					.thenApply(result -> result.orElse(null));
 		} catch (RejectedExecutionException e) {
-			return;
+			generated = CompletableFuture.failedFuture(e);
 		}
-		generated.whenComplete((result, error) -> workers.complete(() -> {
+		workers.complete(generated, (result, error) -> {
 			pace.finishGenerating(background);
 			state.generating.remove(chunk);
 			if (result != null && Minimap.isActive()) {
 				state.touch(chunk, clock);
 				sendGenerated(state, result);
 			}
-		}));
+		});
 	}
 
 	// 見ている人に送る
