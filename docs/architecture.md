@@ -12,8 +12,8 @@ minecraft_mods/
 ├─ testkit/java/        全 mod の gametest に一緒にコンパイルする道具
 ├─ docs/                仕様と仕組み
 └─ mods/<mod>/
-   ├─ gradle.properties mod_version
-   ├─ build.gradle      その mod だけの設定（ゲームテスト・Sodium / Iris）
+   ├─ gradle.properties mod_version と、走らせるゲームテスト（server_gametest・client_gametest）
+   ├─ build.gradle      その mod だけの設定（あれば。Sodium・Iris の API の参照、jori の同梱）
    └─ src/
 ```
 
@@ -21,7 +21,10 @@ minecraft_mods/
 - ルートの `build.gradle` の `subprojects` が、全 mod に Loom・Minecraft・Fabric Loader・Fabric API を入れ、`fabric.mod.json` と `*.mixins.json` の `${version}`・`${minecraft_version}`・`${loader_version}`・`${java_version}` を埋め、LICENSE を jar に入れる
   - 埋めるのは main・client・gametest のすべてのソースセット（`ProcessResources` のタスクすべて）。mixins.json の `compatibilityLevel` は `JAVA_${java_version}` と書く。Java を上げるときに mod ごとに直して回らずに済むようにするため
 - jar は `<mod>-<mod_version>+<minecraft_version>.jar`
-- Sodium・Iris は、使う mod の `build.gradle` で Modrinth の maven から入れる。Sodium のクラスに mixin するときだけ `compileOnly`、開発で起動するときは `localRuntime`（`-PnoSodium` で外す）。jar には入れない
+- Sodium・Iris は Modrinth の maven から入れる。開発で起動するとき（runClient・ゲームテスト）は、ルートの `build.gradle` がどの mod にも `localRuntime` で入れる（`-PnoSodium` で外す）。jar には入れない
+  - 以前は mod ごとの `build.gradle` に同じ設定を書いていて、sorter と timber には入っていなかった（sorter のクライアントのテストがバニラ描画でしか走っていなかった）
+  - Sodium・Iris のクラスをコンパイルで参照する mod だけ、自分の `build.gradle` に書く（xray の `compileOnly` の Sodium、fullbright・minimap の `gametestCompileOnly` の Iris）
+- `mods/<mod>/build.gradle` は、その mod だけの設定があるときだけ置く。共通の設定はルートの `subprojects` に置き、mod 側には差分だけを残す
 - jori は各 mod を `include project(...)` で Jar-in-Jar にする（[mods/jori.md](mods/jori.md)）
 
 ## ソースセット
@@ -32,10 +35,12 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 |---|---|
 | `src/main` | サーバーでも動くコード。`fabric.mod.json`・アイコン・言語ファイルもここ |
 | `src/client` | クライアントだけのコード。`<Mod>Client`・画面・描画と入力の mixin |
-| `src/gametest` | ゲームテスト。`mods/<mod>/build.gradle` の `fabricApi.configureTests` で作り、mod ID は `<mod>-gametest` |
+| `src/gametest` | ゲームテスト。ルートの `build.gradle` が `fabricApi.configureTests` で作り、mod ID は `<mod>-gametest` |
 
-- サーバーのゲームテスト（`enableGameTests`）は sorter と timber。`./gradlew build` で走る
-- ほかはクライアントのゲームテスト（`enableClientGameTests`、`runClientGameTest`）。ルートの `build.gradle` の BuildService（`minecraftClients`）で同時に起動する数を絞り、時間切れを付ける
+- どちらのゲームテストを走らせるかは `mods/<mod>/gradle.properties` の `server_gametest`・`client_gametest`（`true` か `false`）。ルートの `build.gradle` と `dev.py test` が同じものを読む。どちらも `true` でなければ gametest のソースセットは作らない
+  - 以前は mod ごとの `build.gradle` の `enableClientGameTests` を dev.py が正規表現で読んでいた
+- サーバーのゲームテスト（`server_gametest=true`）は sorter と timber。`./gradlew build` で走る
+- ほかはクライアントのゲームテスト（`client_gametest=true`、`runClientGameTest`）。ルートの `build.gradle` の BuildService（`minecraftClients`）で同時に起動する数を絞り、時間切れを付ける
 - 長いクライアントのゲームテストは、testkit の `Scenario` で独立したシナリオに分ける。`-Pscenarios=a,b` をルートの `build.gradle` がシステムプロパティ `testkit.scenarios` にして渡し、名前の合わないシナリオは飛ばす（[development.md](development.md)）
 
 ## mod の形
@@ -70,3 +75,4 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 | fullbright | `LightmapRenderStateExtractor`（ライトマップ） | Iris の `CommonUniforms`（シェーダーパックの uniform） |
 
 - Sodium のチャンクの作り直しは、バニラと同じ `Minecraft.levelExtractor.allChanged()` で起きる
+- ほかの mod は Sodium が置き換える経路に触らないので、Sodium・Iris 用のフックはない。minimap の地図は HUD と画面、光の柱はビーコンのレンダータイプ、peek は GUI の描画、zoom の FOV はバニラの `Camera` から Sodium・Iris にも渡る。placer・refill・sorter・timber は描画に関わらない

@@ -62,20 +62,30 @@ def bundle_modules():
     return re.findall(r"'([^']+)'", match.group(1)) if match else []
 
 
+def property_value(text, name):
+    """gradle.properties の 1 行「名前=値」の値。なければ None"""
+    match = re.search(rf"^{re.escape(name)}=(.*)$", text, re.M)
+    return match.group(1).strip() if match else None
+
+
+def mod_property(mod, name):
+    path = MODS_DIR / mod / "gradle.properties"
+    return property_value(path.read_text(encoding="utf-8"), name) if path.is_file() else None
+
+
 def has_client_tests(mod):
-    build = MODS_DIR / mod / "build.gradle"
-    return build.is_file() and re.search(r"enableClientGameTests\s*=\s*true", build.read_text(encoding="utf-8")) is not None
+    """クライアントのゲームテストがあるか。ルートの build.gradle と同じく mods/<mod>/gradle.properties の client_gametest を見る"""
+    return mod_property(mod, "client_gametest") == "true"
 
 
 def mod_version(mod, ref=None):
-    text = git("show", f"{ref}:mods/{mod}/gradle.properties") if ref else (MODS_DIR / mod / "gradle.properties").read_text(encoding="utf-8")
-    match = re.search(r"^mod_version=(\S+)", text, re.M)
-    return match.group(1) if match else None
+    if ref:
+        return property_value(git("show", f"{ref}:mods/{mod}/gradle.properties"), "mod_version")
+    return mod_property(mod, "mod_version")
 
 
 def root_property(name):
-    match = re.search(rf"^{re.escape(name)}=(.*)$", (ROOT / "gradle.properties").read_text(encoding="utf-8"), re.M)
-    return match.group(1).strip() if match else None
+    return property_value((ROOT / "gradle.properties").read_text(encoding="utf-8"), name)
 
 
 def minecraft_version():

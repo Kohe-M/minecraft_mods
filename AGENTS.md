@@ -153,7 +153,8 @@ python tools/dev.py shots                # いまあるスクリーンショッ�
 ## mod の作り方
 
 - パッケージは `com.omuraisu.<mod>`、mod ID はディレクトリ名と同じにする
-- 新しい mod は `mods/<mod>` に作って `settings.gradle` の `include` に追加し、`mods/<mod>/gradle.properties` に `mod_version` を置く
+- 新しい mod は `mods/<mod>` に作って `settings.gradle` の `include` に追加し、`mods/<mod>/gradle.properties` に `mod_version` と、走らせるゲームテスト（`server_gametest`・`client_gametest` を `true` か `false`）を置く
+  - Modrinth のリポジトリ・Sodium と Iris の `localRuntime`・ゲームテストのソースセットはルートの `build.gradle` が全 mod に用意する。`mods/<mod>/build.gradle` には、その mod だけの設定があるときだけ差分を書く
 - 言語ファイルは `en_us.json` と `ja_jp.json` の両方を用意する
 - mod を追加したときや、クライアント・サーバーのどちらに入れるかが変わったときは、README の mod 表（クライアント / サーバー列）を更新する
   - 列の値は `必須` / `任意（入れると何ができるか）` / `不要`
@@ -175,5 +176,5 @@ Iris + Sodium の環境で遊ぶ前提。すべての mod をこの環境で動�
   - Sodium のクラスへの mixin には `@Pseudo` を付けて、Sodium がなくても起動できるようにする
   - Sodium の API は `compileOnly "maven.modrinth:sodium:${sodium_version}"` で参照する
 - Iris でシェーダーパックを有効にしても、表示が崩れたり効果が消えたりしないようにする
-- 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（`mods/xray/build.gradle`・`mods/zoom/build.gradle` 参照）
+- 動作確認では `localRuntime` で Sodium と Iris を入れて起動し、`-PnoSodium` でバニラ描画も確かめる（ルートの `build.gradle` が全 mod に入れる。Sodium の API を参照する例は `mods/xray/build.gradle`）
 - Sodium・Iris のバージョンはルートの `gradle.properties` の `sodium_version`・`iris_version`。MC を上げたら一緒に上げる
