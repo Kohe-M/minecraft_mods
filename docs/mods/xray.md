@@ -35,6 +35,7 @@
 
 ## ゲームテスト
 
+- Sodium + Iris とバニラ描画の両方で走らせる（`gradle.properties` の `vanilla_render_test=true`）。チャンク構築のフックが、Sodium（`LevelSlice`）とバニラ（`RenderSectionRegion`）で別のため
 - ホイールは、外周の半径（54）だけずらした位置にカーソルを置いて選ぶ
 - オフ・全鉱石・ダイヤモンド・クリックでの確定・jori で無効の間・エンティティとチェストを、スクリーンショットで確かめる
 - ホイールが開くより短い長押し（`HOLD_TICKS - 2`）は単押しになることを確かめる
