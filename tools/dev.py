@@ -204,6 +204,11 @@ def select_mods(files):
     return {mod: reasons[mod] for mod in sorted(reasons)}
 
 
+def tools_changed(files):
+    """tools/（dev.py とそのテスト）が変わったか。変わったら tools/test_dev.py を走らせる。mod の jar とゲームテストには響かないので mod は走らせない"""
+    return any(path.startswith("tools/") for path in files)
+
+
 # ---- gradle ----
 
 def gradlew():
@@ -481,6 +486,7 @@ figure{{margin:0}}img{{width:100%;display:block;border:1px solid #3a3f48}}figcap
 def plan_test(args):
     """何を、なぜ、どう走らせるか。--plan で出し、実行の記録にも残す"""
     base = None
+    tools = args.all
     if args.mods:
         check_mods(args.mods)
         reasons = {m: ["指定"] for m in sorted(set(args.mods))}
@@ -490,7 +496,9 @@ def plan_test(args):
         base = args.base or default_base()
         if not commit_exists(base):
             sys.exit(f"比べる先 {base} が見つからない。--base <ref> で指定するか、mod の指定か --all で走らせる")
-        reasons = select_mods(changed_files(base))
+        files = changed_files(base)
+        reasons = select_mods(files)
+        tools = tools_changed(files)
     mods = list(reasons)
     client_mods = [] if args.no_client else [m for m in mods if has_client_tests(m)]
     render = VANILLA if args.no_sodium else SODIUM
@@ -504,6 +512,8 @@ def plan_test(args):
         "scenarios": args.scenario or [],
         "slots": args.slots,
         "timeout": args.timeout,
+        # tools/ のテスト（tools/test_dev.py）。tools/ が変わったときと --all
+        "tools": tools,
     }
     # 1 回目はビルドとすべてのテスト。描画にフックする mod は、2 回目にバニラ描画でクライアントのテストだけを走らせる
     plan["passes"] = [{
@@ -541,6 +551,8 @@ def vanilla_mods(plan):
 def print_plan(plan, command=True):
     if plan["base"]:
         print(f"比べる先: {plan['base']}（{plan['base_commit']}）")
+    if plan["tools"]:
+        print("  tools  dev.py のテスト（tools/test_dev.py）")
     if not plan["mods"]:
         print("変わった mod はない。全部なら --all、mod を指定するなら test <mod>")
         return
@@ -670,17 +682,40 @@ def write_run(record):
     return path
 
 
+def run_tool_tests():
+    """tools/test_dev.py（標準の unittest。git や Gradle は動かさない）"""
+    print("$ python -m unittest discover -s tools", flush=True)
+    result = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tools"], cwd=ROOT, capture_output=True,
+                            env=dict(os.environ, PYTHONIOENCODING="utf-8"), text=True, encoding="utf-8", errors="replace")
+    lines = (result.stdout + result.stderr).strip().splitlines()
+    ran = next((line for line in reversed(lines) if line.startswith("Ran ")), "")
+    detail = [] if result.returncode == 0 else [line for line in lines if line.startswith(("FAIL:", "ERROR:"))] or lines[-15:]
+    return {"ok": result.returncode == 0, "ran": ran, "detail": detail}
+
+
+def print_tool_tests(tools):
+    print(f"{'✓' if tools['ok'] else '✗'} tools  dev.py のテスト {'OK' if tools['ok'] else 'NG'}（{tools['ran']}）")
+    for line in tools["detail"]:
+        print(f"    {line}")
+
+
 def command_test(args):
     plan = plan_test(args)
     # 走らせるときは run_gradle がコマンドを出す
     print_plan(plan, command=args.plan)
-    if args.plan or not plan["mods"]:
+    if args.plan or not plan["mods"] and not plan["tools"]:
         return 0
+
+    started = time.time()
+    tools = run_tool_tests() if plan["tools"] else None
+    if not plan["mods"]:
+        print()
+        print_tool_tests(tools)
+        return 0 if tools["ok"] else 1
 
     OUT.mkdir(parents=True, exist_ok=True)
     log = OUT / "gradle.log"
     log.write_text("", encoding="utf-8")
-    started = time.time()
     tree = content_tree()
     record = {
         "id": time.strftime("%Y%m%d-%H%M%S"),
@@ -717,9 +752,11 @@ def command_test(args):
     shots = {label: files for run in passes for label, files in run["shots"].items()}
     sheets = make_sheets(shots)
     report = write_report(results, shots, "テストの結果", errors + ([problems] if problems else []), plan["render"])
-    ok = not errors and not problems and all(r["ok"] for r in results)
+    ok = not errors and not problems and all(r["ok"] for r in results) and (tools is None or tools["ok"])
 
     print()
+    if tools:
+        print_tool_tests(tools)
     for lines in errors:
         print("✗ gradle がタスクの外で失敗した")
         for line in lines:
@@ -748,6 +785,7 @@ def command_test(args):
         "attempts": [dict(a.record(), render=run["render"]) for run in passes for a in run["attempts"]],
         "errors": errors,
         "source_problems": problems,
+        "tools": tools,
         "results": [dict(r, screenshots=len(shots.get(r["mod"], [])), vanilla_screenshots=len(shots.get(r["mod"] + VANILLA_LABEL, [])))
                     for r in results],
         "artifacts": {

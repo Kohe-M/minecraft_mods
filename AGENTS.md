@@ -18,6 +18,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 - 仕様や仕組みを変えたら `docs/mods/<mod>.md` も直す。コードを読まなくても分かるように、決めた理由も添える
 - MC の API で引っかかったことは `docs/minecraft.md` に足す
 - `docs/` と README だけの変更はゲームテストを走らせなくてよい（`dev.py test` も何も走らせない）
+- `tools/`（dev.py）を変えたら、`dev.py test` が `tools/test_dev.py` を走らせる（mod は走らせない）。判定を変えたらテストも足す
 
 ## バージョン
 
@@ -125,6 +126,7 @@ python tools/dev.py test --no-sodium     # Sodium / Iris を入れずにバニ�
 python tools/dev.py test --no-vanilla    # 描画にフックする mod の、バニラ描画の 2 回目を飛ばす（修正の途中に）
 python tools/dev.py check --build        # jar を作り、ソースと jar の食い違い（言語ファイル・jori の同梱・文字化け）を確かめる
 python tools/dev.py shots                # いまあるスクリーンショットを一覧にまとめ直す
+python -m unittest discover -s tools     # dev.py のテスト（tools/test_dev.py）
 ./gradlew build                          # ビルド + server ゲームテスト（sorter, timber）
 ./gradlew runClientGameTest              # 全 mod の client ゲームテスト
 ./gradlew :xray:runClient                # -PnoSodium でバニラ描画

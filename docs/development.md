@@ -30,7 +30,8 @@ python tools/dev.py test xray --no-vanilla   # 描画にフックする mod で�
 - 対象は、比べる先からの差分・コミットしていない変更・追跡していないファイルで決める
   - `mods/<mod>/` が変わった mod。中の mod が変われば jori も
   - ルートのビルド設定（`build.gradle`・`settings.gradle`・`gradle.properties`・`gradle/`）と `testkit/` が変わったら全 mod
-  - `docs/`・README・`tools/` だけの変更では何も走らせない
+  - `docs/`・README だけの変更では何も走らせない
+  - `tools/` が変わったら、dev.py のテスト（下の「dev.py のテスト」）だけを走らせる。mod の jar とゲームテストには響かないので mod は走らせない。`--all` でも走らせる
   - 比べる先が見つからないときは止まる（差分なしとして成功にはしない）
 - 合否は Gradle の終了コードとタスクの結果で決める。ログは失敗の中身を出すのに使う
   - mod のビルドは `:<mod>:build` が走って失敗していないときだけ OK。走らなかったら「走らず」で NG
@@ -121,6 +122,16 @@ python tools/dev.py release fullbright port minimap port # MC の移植。版は
 - `Scenario` は、始まりと終わりとかかった時間（`scenario <名前>: done in <秒> s`。失敗したら `failed`）をロガー `testkit` でゲームのログに出す。`System.out` はゲームのログ（`latest.log`）に入らず、Gradle の出力ではどの mod のものか分からないため
 - test はクライアントのテストが終わるたびにゲームのログを読み、クライアントにかかった時間（ログの最初と最後の行の時刻の差。JVM と Gradle の起動は含まない）とシナリオごとの時間を、結果の行と `last-run.json` の `times` に載せる
 - 遅いテストを分けたり速くしたりするときは、まずこの数字を見る。全体の時間は一番長いクライアント（いまは minimap）で決まる
+
+## dev.py のテスト
+
+```bash
+python -m unittest discover -s tools       # tools/test_dev.py。数秒で終わる
+```
+
+- 標準の unittest で、git や Gradle は動かさない。`mods/` と記録は一時フォルダに作り、`dev.py` の場所（`ROOT`・`MODS_DIR`・`OUT`・`RUNS`）と git を呼ぶ関数を差し替える
+- 確かめること: 変わったファイルから選ぶ mod（`select_mods`・`tools_changed`）、`gradle.properties` の読み方（`client_gametest`・`vanilla_render_test`）、版の上げ方（`bump`）、jori の連動（`plan_release`）、Gradle のログの読み方（`Attempt`。失敗・時間切れ・タスクの外の失敗）、描画の構成ごとの計画と結果（`plan_test`・`mod_result`）、名前で組み立てるオプション（`gradle_options`）、かかった時間（`client_timings`）、テストの記録の探し方（`content_keys`・`passing_record`）と release が版を書き換える前に止まること、jar の mixins.json の検査
+- dev.py の判定を変えたら、ここにもテストを足す。ゲームテストと違って Minecraft を起動しないので、判定の細かい場合分けはこちらで確かめる
 
 ## 文字コード
 
