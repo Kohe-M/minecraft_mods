@@ -186,6 +186,8 @@ vanilla は生成の仕事を、チャンクのレベルの順に列（`ChunkTas
 
 クライアントのゲームテストはシナリオ（testkit の `Scenario`）に分かれ、どれも自分でワールドやサーバーを作る。`python tools/dev.py test minimap --scenario <名前>` で絞れる。共通の道具と座標は `MapTests`。
 
+Sodium + Iris とバニラ描画の両方で走らせる（`gradle.properties` の `vanilla_render_test=true`）。光の柱はワールドに描くので、Sodium + Iris（シェーダーパックの切り替えも）とバニラ描画のどちらでも確かめる。
+
 | 名前 | クラス | 確かめること |
 |---|---|---|
 | `hud` | `HudTest` | ミニマップの大きさ・座標の文字・地形・F1 と F3・無効の間・ステータス効果・他のプレイヤー |
