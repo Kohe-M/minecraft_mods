@@ -133,7 +133,10 @@ python -m unittest discover -s tools       # tools/test_dev.py。数秒で終わ
 - 確かめること: 変わったファイルから選ぶ mod（`select_mods`・`tools_changed`）、`gradle.properties` の読み方（`client_gametest`・`vanilla_render_test`）、版の上げ方（`bump`）、jori の連動（`plan_release`）、Gradle のログの読み方（`Attempt`。失敗・時間切れ・タスクの外の失敗）、描画の構成ごとの計画と結果（`plan_test`・`mod_result`）、名前で組み立てるオプション（`gradle_options`）、かかった時間（`client_timings`）、テストの記録の探し方（`content_keys`・`passing_record`）と release が版を書き換える前に止まること、jar の mixins.json の検査
 - dev.py の判定を変えたら、ここにもテストを足す。ゲームテストと違って Minecraft を起動しないので、判定の細かい場合分けはこちらで確かめる
 
-## 文字コード
+## 文字コードと改行
 
+- ファイルは UTF-8 で、改行は LF。`.gitattributes`（`* text=auto eol=lf`。`*.bat` は CRLF、png と jar は binary）で、リポジトリにも作業ツリーにも LF で入る。Windows の `core.autocrlf=true` のままでも CRLF にならない
+  - 以前は `.gitattributes` が `gradlew` と `*.bat` しか決めておらず、`core.autocrlf` で作業ツリーの一部のファイルだけが CRLF になっていた（リポジトリの中はすべて LF）。jar の中のリソースの改行が、チェックアウトのしかたで変わっていた
+- エディタの設定は `.editorconfig`（UTF-8・LF・最後に改行。Java・Gradle・JSON はタブ、Python は空白 4）
 - `JAVA_HOME` が JDK 8 などだと、Gradle はデーモンにも同じ既定の文字コード（Windows では MS932）を渡す。Loom が jori の `fabric.mod.json` に同梱の一覧を書き足すときにこれを使い、日本語の説明が化けた（jori 1.9.0 の jar で見つかった）。`gradle.properties` の `org.gradle.jvmargs` に `-Dfile.encoding=UTF-8` を入れて防ぐ
 - javac やゲームの出力は、それでも OS の文字コードのことがある。dev.py は UTF-8 で読めない行を cp932 で読む

@@ -1,9 +1,9 @@
-#
-# https://help.github.com/articles/dealing-with-line-endings/
-#
-# Linux start script should use lf
-/gradlew        text eol=lf
+# 改行はリポジトリでも作業ツリーでも LF にそろえる（Windows の core.autocrlf によらない）
+* text=auto eol=lf
 
-# These are Windows script files and should use crlf
-*.bat           text eol=crlf
+# Windows のスクリプトは CRLF
+*.bat text eol=crlf
 
+# 変換しない
+*.png binary
+*.jar binary

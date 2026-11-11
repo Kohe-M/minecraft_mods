@@ -115,6 +115,8 @@ build: Fabric API を 0.166.0+26.3 に更新
 
 `JAVA_HOME` はどの JDK でもよい（いまは JDK 8 を指している）。Gradle のデーモンは `gradle/gradle-daemon-jvm.properties` の JDK 25 を、インストール済みの JDK から自動で探して使う。
 
+ファイルは UTF-8・改行は LF（`*.bat` だけ CRLF）。`.gitattributes` と `.editorconfig` で決めてある（[docs/development.md](docs/development.md) の「文字コードと改行」）。
+
 ```bash
 python tools/dev.py doctor               # JDK・Python・Gradle などがそろっているか
 python tools/dev.py test --plan          # 何をなぜ走らせるかだけ出す
