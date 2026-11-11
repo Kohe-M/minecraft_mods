@@ -434,13 +434,7 @@ def plan_test(args):
         reasons = select_mods(changed_files(base))
     mods = list(reasons)
     client_mods = [] if args.no_client else [m for m in mods if has_client_tests(m)]
-    options = [f"-PclientSlots={args.slots}", f"-PclientTimeout={args.timeout}"]
-    if args.no_sodium:
-        options.append("-PnoSodium")
-    if args.scenario:
-        options.append(f"-Pscenarios={','.join(args.scenario)}")
-    tasks = [f":{m}:build" for m in mods] + [f":{m}:runClientGameTest" for m in client_mods]
-    return {
+    plan = {
         "base": base,
         "base_commit": git("rev-parse", "--short", base).strip() if base else None,
         "reasons": reasons,
@@ -448,9 +442,22 @@ def plan_test(args):
         "client_mods": client_mods,
         "render": "vanilla" if args.no_sodium else "sodium+iris",
         "scenarios": args.scenario or [],
-        "tasks": tasks,
-        "options": options,
+        "slots": args.slots,
+        "timeout": args.timeout,
+        "tasks": [f":{m}:build" for m in mods] + [f":{m}:runClientGameTest" for m in client_mods],
     }
+    plan["options"] = gradle_options(plan)
+    return plan
+
+
+def gradle_options(plan, slots=None):
+    """gradle に渡すオプション。走らせ直しで変わるもの（同時に起動する数）は名前で受け取って組み立てる"""
+    options = [f"-PclientSlots={slots or plan['slots']}", f"-PclientTimeout={plan['timeout']}"]
+    if plan["render"] == "vanilla":
+        options.append("-PnoSodium")
+    if plan["scenarios"]:
+        options.append(f"-Pscenarios={','.join(plan['scenarios'])}")
+    return options
 
 
 def print_plan(plan, command=True):
@@ -543,8 +550,7 @@ def command_test(args):
     hung = [m for m in plan["client_mods"] if f":{m}:runClientGameTest" in main.timed_out]
     if hung and not args.no_retry:
         print(f"時間切れ: {', '.join(hung)}。1 つずつ走らせ直す", flush=True)
-        retry_options = ["-PclientSlots=1"] + plan["options"][1:]
-        retry = run_gradle([f":{m}:runClientGameTest" for m in hung], retry_options, log)
+        retry = run_gradle([f":{m}:runClientGameTest" for m in hung], gradle_options(plan, slots=1), log)
         attempts.append(retry)
         retried = set(hung)
 
