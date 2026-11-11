@@ -130,9 +130,9 @@ public class JoriClientGameTest implements FabricClientGameTest {
 		context.waitTicks(SETTLE_TICKS);
 	}
 
-	// 書いていない mod は有効。壊れた行は読み飛ばす
+	// 書いていない mod は有効。壊れた行は読み飛ばし、知らない行が混ざっていても値を読める
 	private static void testConfigFile() {
-		write("sorter=false\nbroken line\n zoom = false \nxray=yes\n");
+		write("# memo\nsorter=false\nbroken line\nfuture.option=3\n zoom = false \nxray=yes\n");
 		JoriConfig config = JoriConfig.load();
 		assertEquals("sorter", false, config.isEnabled("sorter"));
 		assertEquals("zoom", false, config.isEnabled("zoom"));
