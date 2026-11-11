@@ -48,8 +48,8 @@ python tools/dev.py test xray --no-vanilla   # 描画にフックする mod で�
 
 | ファイル | 中身 |
 |---|---|
-| 画面の最後 | mod ごとに 1 行。2 回目にバニラ描画で走らせた mod は「バニラ描画」の結果も同じ行に出す。失敗なら例外とこのリポジトリのスタックの行（2 回目の分は頭に「（バニラ描画）」） |
-| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成（`plan.passes`）・Gradle の各回の終了コードとタスクの結果と描画の構成（`attempts`）・mod ごとの結果（`client` は 1 回目、`vanilla` はバニラ描画の 2 回目）・成果物の場所。直近の 30 回を残す |
+| 画面の最後 | mod ごとに 1 行。2 回目にバニラ描画で走らせた mod は「バニラ描画」の結果も同じ行に出す。クライアントの結果の後ろに、かかった時間（`OK（372 秒: hud 41・map 95・…）`）。失敗なら例外とこのリポジトリのスタックの行（2 回目の分は頭に「（バニラ描画）」） |
+| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成（`plan.passes`）・Gradle の各回の終了コードとタスクの結果と描画の構成（`attempts`）・mod ごとの結果（`client` は 1 回目、`vanilla` はバニラ描画の 2 回目、`times` は構成ごとのかかった時間）・成果物の場所。直近の 30 回を残す |
 | `build/dev/report.html` | 結果の表とすべてのスクリーンショット（人が見る用） |
 | `build/dev/sheets/<mod>-<n>.png` | スクリーンショットを 20 枚ずつ並べた画像。見た目はまずこれを Read する。バニラ描画の 2 回目の分は `<mod>-vanilla-<n>.png`（写しは `build/dev/screenshots/<mod>-vanilla/`） |
 | `build/dev/gradle.log` | Gradle の出力すべて（各回の終わりに終了コード） |
@@ -101,6 +101,12 @@ python tools/dev.py release fullbright port minimap port # MC の移植。版は
 - 1 つの mod のテストが長くなったら、ほかと独立して走らせられるシナリオ（testkit の `Scenario`）に分ける。シナリオは自分でワールドを作り、前のシナリオの状態に頼らない
 - gametest の `fabric.mod.json` の `fabric-client-gametest` にシナリオのクラスを並べる。Fabric はシナリオごとに、ゲームの設定・押しているキー・ウィンドウの大きさを戻し、タイトル画面に戻っているかを確かめる。どれかが失敗したらそこで止まる
 - シナリオに共通の道具はその mod のテストのパッケージに置く（minimap は `MapTests`）。ほかの mod でも使うものは testkit に置く
+
+## かかった時間
+
+- `Scenario` は、始まりと終わりとかかった時間（`scenario <名前>: done in <秒> s`。失敗したら `failed`）をロガー `testkit` でゲームのログに出す。`System.out` はゲームのログ（`latest.log`）に入らず、Gradle の出力ではどの mod のものか分からないため
+- test はクライアントのテストが終わるたびにゲームのログを読み、クライアントにかかった時間（ログの最初と最後の行の時刻の差。JVM と Gradle の起動は含まない）とシナリオごとの時間を、結果の行と `last-run.json` の `times` に載せる
+- 遅いテストを分けたり速くしたりするときは、まずこの数字を見る。全体の時間は一番長いクライアント（いまは minimap）で決まる
 
 ## 文字コード
 

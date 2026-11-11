@@ -550,13 +550,34 @@ def run_pass(plan, step, log, no_retry, label):
 
 def client_result(mod, attempt, retried):
     task = f":{mod}:runClientGameTest"
-    if task in attempt.timed_out:
-        return {"status": "時間切れ", "detail": client_failure(mod)}
-    if task in attempt.failed:
-        return {"status": "NG", "detail": client_failure(mod)}
     if not attempt.ran(task):
         return {"status": "走らず", "detail": []}
-    return {"status": "OK（時間切れの後に走らせ直し）" if retried else "OK", "detail": []}
+    result = client_timings(mod)
+    if task in attempt.timed_out:
+        result.update(status="時間切れ", detail=client_failure(mod))
+    elif task in attempt.failed:
+        result.update(status="NG", detail=client_failure(mod))
+    else:
+        result.update(status="OK（時間切れの後に走らせ直し）" if retried else "OK", detail=[])
+    return result
+
+
+LOG_TIME = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\]")
+SCENARIO_TIME = re.compile(r"scenario (\S+): (?:done|failed) in ([\d.]+) s")
+
+
+def client_timings(mod):
+    """クライアントのゲームテストにかかった時間（秒）。seconds はゲームのログの最初と最後の行の時刻の差（JVM と Gradle の起動は含まない）、
+    scenarios は testkit の Scenario がログに出す、シナリオごとの時間"""
+    log = MODS_DIR / mod / "build" / "run" / "clientGameTest" / "logs" / "latest.log"
+    if not log.is_file():
+        return {"seconds": None, "scenarios": {}}
+    lines = read_log(log)
+    times = [int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) for m in map(LOG_TIME.match, lines) if m]
+    # 日をまたいだら 1 日足す
+    seconds = (times[-1] - times[0]) % 86400 if times else None
+    scenarios = {m.group(1): float(m.group(2)) for m in map(SCENARIO_TIME.search, lines) if m}
+    return {"seconds": seconds, "scenarios": scenarios}
 
 
 def mod_result(mod, passes):
@@ -577,15 +598,28 @@ def mod_result(mod, passes):
         build = "走らず"
 
     statuses = []
+    times = {}
     for index, run in enumerate(passes):
         client = run["clients"].get(mod)
         statuses.append(client["status"] if client else "-")
         if client:
             prefix = "" if index == 0 else f"（{RENDER_NAMES[run['render']]}描画）"
             detail += [prefix + line for line in client["detail"]]
+            if "seconds" in client:
+                times[run["render"]] = {"seconds": client["seconds"], "scenarios": client["scenarios"]}
     client, vanilla = statuses[0], (statuses[1] if len(statuses) > 1 else "-")
     ok = build == "OK" and all(s == "-" or s.startswith("OK") for s in (client, vanilla))
-    return {"mod": mod, "build": build, "client": client, "vanilla": vanilla, "ok": ok, "detail": detail}
+    return {"mod": mod, "build": build, "client": client, "vanilla": vanilla, "ok": ok, "detail": detail, "times": times}
+
+
+def describe_client(status, times):
+    """結果の行に出す、クライアントの結果とかかった時間（ゲームの時間と、シナリオごとの時間）"""
+    if not times:
+        return status
+    parts = [f"{times['seconds']} 秒"] if times.get("seconds") is not None else []
+    if times.get("scenarios"):
+        parts.append("・".join(f"{name} {round(seconds)}" for name, seconds in times["scenarios"].items()))
+    return status + (f"（{': '.join(parts)}）" if parts else "")
 
 
 def write_run(record):
@@ -656,9 +690,9 @@ def command_test(args):
     for result in results:
         mark = "✓" if result["ok"] else "✗"
         mod = result["mod"]
-        line = f"{mark} {mod:<{width}}  ビルド {result['build']:<4}  クライアント {result['client']}"
+        line = f"{mark} {mod:<{width}}  ビルド {result['build']:<4}  クライアント {describe_client(result['client'], result['times'].get(plan['render']))}"
         if result["vanilla"] != "-":
-            line += f"  バニラ描画 {result['vanilla']}"
+            line += f"  バニラ描画 {describe_client(result['vanilla'], result['times'].get(VANILLA))}"
         line += f"  画面 {len(shots.get(mod, []))}"
         if mod + VANILLA_LABEL in shots:
             line += f" + {len(shots[mod + VANILLA_LABEL])}"
