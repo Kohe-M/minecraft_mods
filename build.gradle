@@ -29,10 +29,28 @@ subprojects {
 	version = "${mod_version}+${minecraft_version}"
 	group = "${maven_group}.${project.name}"
 
+	// Sodium・Iris は Modrinth の maven から入れる
+	repositories {
+		maven {
+			name = "Modrinth"
+			url = "https://api.modrinth.com/maven"
+			content {
+				includeGroup "maven.modrinth"
+			}
+		}
+	}
+
 	dependencies {
 		minecraft "com.mojang:minecraft:${minecraft_version}"
 		implementation "net.fabricmc:fabric-loader:${loader_version}"
 		implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
+
+		// Iris + Sodium の環境で遊ぶ前提なので、開発で起動するとき（runClient・ゲームテスト）はどの mod にも入れる。jar には入らない。
+		// -PnoSodium でバニラ描画のまま起動できる
+		if (!project.hasProperty("noSodium")) {
+			localRuntime "maven.modrinth:sodium:${sodium_version}"
+			localRuntime "maven.modrinth:iris:${iris_version}"
+		}
 	}
 
 	loom {
@@ -42,6 +60,22 @@ subprojects {
 			register(project.name) {
 				sourceSet sourceSets.main
 				sourceSet sourceSets.client
+			}
+		}
+	}
+
+	// ゲームテストのソースセット（src/gametest、mod ID は <mod>-gametest）。サーバーとクライアントのどちらのゲームテストを走らせるかは
+	// mods/<mod>/gradle.properties の server_gametest・client_gametest で決める（dev.py test も同じものを読む）。どちらもなければ作らない。
+	// mod の build.gradle より先に作るので、mod の build.gradle では gametestCompileOnly などをそのまま使える
+	def serverGametest = (project.findProperty("server_gametest") ?: "false").toString().toBoolean()
+	def clientGametest = (project.findProperty("client_gametest") ?: "false").toString().toBoolean()
+	if (serverGametest || clientGametest) {
+		fabricApi {
+			configureTests {
+				createSourceSet = true
+				modId = project.name + "-gametest"
+				enableGameTests = serverGametest
+				enableClientGameTests = clientGametest
 			}
 		}
 	}
