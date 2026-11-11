@@ -1,8 +1,0 @@
-fabricApi {
-	configureTests {
-		createSourceSet = true
-		modId = "sorter-gametest"
-		enableGameTests = true
-		enableClientGameTests = true
-	}
-}
