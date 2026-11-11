@@ -1,8 +1,13 @@
 package com.omuraisu.timber.test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import com.omuraisu.timber.Timber;
+import com.omuraisu.timber.TimberConfig;
 
 import net.fabricmc.fabric.api.entity.FakePlayer;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
@@ -87,6 +92,33 @@ public class TimberGameTest {
 
 		helper.assertValueEqual(axe.getMaxDamage() - axe.getDamageValue(), 1, "remaining durability");
 		helper.assertBlockPresent(Blocks.OAK_LOG, TRUNK.getLast());
+		helper.succeed();
+	}
+
+	// クライアントの config/timber.txt は行ごとに読む。知らない行が混ざっていても enabled を読め、書いていなければオン。
+	// 読み書きは main の TimberConfig にあるので、サーバーのゲームテストから一時ファイルで確かめる
+	@GameTest
+	public void configIgnoresUnknownLines(GameTestHelper helper) {
+		Path file = null;
+		try {
+			file = Files.createTempFile("timber", ".txt");
+			Files.writeString(file, "# memo\nfuture_option=3\n enabled = false \nbroken line\n");
+			helper.assertValueEqual(TimberConfig.loadEnabled(file), false, "enabled=false among unknown lines");
+			Files.writeString(file, "future_option=3\n");
+			helper.assertValueEqual(TimberConfig.loadEnabled(file), true, "enabled without the line");
+			TimberConfig.saveEnabled(file, false);
+			helper.assertValueEqual(Files.readString(file), "enabled=false\n", "saved file");
+			helper.assertValueEqual(TimberConfig.loadEnabled(file.resolveSibling("missing-timber.txt")), true, "enabled without the file");
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		} finally {
+			try {
+				if (file != null) {
+					Files.deleteIfExists(file);
+				}
+			} catch (IOException ignored) {
+			}
+		}
 		helper.succeed();
 	}
 
