@@ -22,7 +22,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 ## バージョン
 
 - MC に依存するバージョン（MC・Loader・Loom・Fabric API・Java・Sodium・Iris など）はルートの `gradle.properties` にだけ書く。mod 側の `build.gradle`・`gradle.properties`・`fabric.mod.json` に直接書かない
-- `fabric.mod.json` の `depends` は `${minecraft_version}`・`${loader_version}`・`${java_version}` で埋める
+- `fabric.mod.json` の `depends` は `${minecraft_version}`・`${loader_version}`・`${java_version}` で埋める。`*.mixins.json` の `compatibilityLevel` は `JAVA_${java_version}` と書く
 - 各 mod のバージョンは `mods/<mod>/gradle.properties` の `mod_version`（SemVer）
   - 修正は patch、機能追加は minor、設定・挙動の互換を壊す変更は major
   - MC への移植だけなら据え置く（`+<MC>` で区別される）

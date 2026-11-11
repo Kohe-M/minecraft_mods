@@ -46,7 +46,8 @@ subprojects {
 		}
 	}
 
-	processResources {
+	// main・client・gametest のどのソースセットでも、fabric.mod.json と mixins.json のバージョンを gradle.properties から埋める
+	tasks.withType(ProcessResources).configureEach {
 		def props = [
 			version          : project.version,
 			minecraft_version: minecraft_version,
@@ -55,7 +56,7 @@ subprojects {
 		]
 		inputs.properties props
 
-		filesMatching("fabric.mod.json") {
+		filesMatching(["fabric.mod.json", "*.mixins.json"]) {
 			expand props
 		}
 	}

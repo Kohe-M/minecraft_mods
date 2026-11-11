@@ -18,7 +18,8 @@ minecraft_mods/
 ```
 
 - `settings.gradle` が `mods/<mod>` を `:<mod>` として登録する。タスク名は `:xray:runClient` のように mod 名だけ
-- ルートの `build.gradle` の `subprojects` が、全 mod に Loom・Minecraft・Fabric Loader・Fabric API を入れ、`fabric.mod.json` の `${version}`・`${minecraft_version}`・`${loader_version}`・`${java_version}` を埋め、LICENSE を jar に入れる
+- ルートの `build.gradle` の `subprojects` が、全 mod に Loom・Minecraft・Fabric Loader・Fabric API を入れ、`fabric.mod.json` と `*.mixins.json` の `${version}`・`${minecraft_version}`・`${loader_version}`・`${java_version}` を埋め、LICENSE を jar に入れる
+  - 埋めるのは main・client・gametest のすべてのソースセット（`ProcessResources` のタスクすべて）。mixins.json の `compatibilityLevel` は `JAVA_${java_version}` と書く。Java を上げるときに mod ごとに直して回らずに済むようにするため
 - jar は `<mod>-<mod_version>+<minecraft_version>.jar`
 - Sodium・Iris は、使う mod の `build.gradle` で Modrinth の maven から入れる。Sodium のクラスに mixin するときだけ `compileOnly`、開発で起動するときは `localRuntime`（`-PnoSodium` で外す）。jar には入れない
 - jori は各 mod を `include project(...)` で Jar-in-Jar にする（[mods/jori.md](mods/jori.md)）
