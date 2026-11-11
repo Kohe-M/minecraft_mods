@@ -6,7 +6,10 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.slf4j.Logger;
+
 import com.mojang.blaze3d.platform.InputConstants;
+import com.mojang.logging.LogUtils;
 
 import com.omuraisu.minimap.MapPlayerPositions;
 import com.omuraisu.minimap.Minimap;
@@ -36,6 +39,7 @@ public class MinimapClient implements ClientModInitializer {
 	public static final FarTerrain FAR_TERRAIN = new FarTerrain();
 
 	public static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("minimap.txt");
+	private static final Logger LOGGER = LogUtils.getLogger();
 	// マップ距離（チャンク）。マップ画面を開いていない間も、この範囲の地形をサーバーから受け取っておく。0 なら開いたときだけ受け取る。
 	// 既定は、1080p で開いた地図を 1 段引いた（1 ブロック 2 画素）画面が収まる広さ。広げるほど、遊んでいる間に生成してセーブが増える
 	public static final int DEFAULT_MAP_DISTANCE = 32;
@@ -107,7 +111,8 @@ public class MinimapClient implements ClientModInitializer {
 		return mapDistance;
 	}
 
-	// config/minimap.txt に 1 行 1 つ「キー=値」。ファイルがなければ既定の値で作り、書ける項目を見せる
+	// config/minimap.txt に 1 行 1 つ「キー=値」。行ごとに読み、キーと値の前後の空白と知らない行は無視する。
+	// ファイルがなければ既定の値で作り、書ける項目を見せる
 	public static void load() {
 		mapDistance = DEFAULT_MAP_DISTANCE;
 		List<String> lines;
@@ -116,16 +121,19 @@ public class MinimapClient implements ClientModInitializer {
 		} catch (NoSuchFileException e) {
 			try {
 				Files.writeString(CONFIG, "map_distance=" + DEFAULT_MAP_DISTANCE + "\n");
-			} catch (IOException ignored) {
+			} catch (IOException failure) {
+				// 書けなくても既定の値で動くが、黙って捨てずにログに出す
+				LOGGER.warn("Failed to save {}: {}", CONFIG, failure.toString());
 			}
 			return;
 		} catch (IOException e) {
 			return;
 		}
 		for (String line : lines) {
-			if (line.startsWith("map_distance=")) {
+			int separator = line.indexOf('=');
+			if (separator > 0 && line.substring(0, separator).strip().equals("map_distance")) {
 				try {
-					mapDistance = Math.clamp(Integer.parseInt(line.substring("map_distance=".length()).strip()), 0, TerrainServer.RADIUS);
+					mapDistance = Math.clamp(Integer.parseInt(line.substring(separator + 1).strip()), 0, TerrainServer.RADIUS);
 				} catch (NumberFormatException ignored) {
 				}
 			}

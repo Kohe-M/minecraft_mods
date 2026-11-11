@@ -151,6 +151,10 @@ public class FarTerrainTest implements Scenario {
 			Files.writeString(MinimapClient.CONFIG, "map_distance=abc\n");
 			context.runOnClient(client -> MinimapClient.load());
 			assertMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
+			// 行ごとに読むので、知らない行が混ざっていても値を読める。キーと値の前後の空白は無視する
+			Files.writeString(MinimapClient.CONFIG, "# memo\nfuture_option=3\n map_distance = 40 \nbroken line\n");
+			context.runOnClient(client -> MinimapClient.load());
+			assertMapDistance(context, 40);
 			setMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
