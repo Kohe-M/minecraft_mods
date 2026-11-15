@@ -16,10 +16,11 @@ public final class TerrainPace {
 	private static final int READS_PER_TICK = 1024;
 	private static final int READS_PER_TICK_BEHIND = 32;
 	private static final int MAX_READING = TerrainWorkers.COUNT * 256;
-	// マップ画面を開いていない人の範囲（マップ距離）は、開いている人の後に回し、遊んでいる間の負担を小さくする。
-	// 読み始めるのは 1 tick にこれまで、生成は同時にこれまで。遅れている間は進めない
-	static final int BACKGROUND_READS_PER_TICK = 32;
-	private static final int BACKGROUND_GENERATING = 4;
+	// マップ画面を開いていない人の範囲は、開いている人の後に回す。読み始めるのは開いている人が使った残りの予算で、
+	// 生成は同時にこれまで（同時に生成する数の上限の方が小さければそちら）。遅れている間は進めない。
+	// 値は計測で決めた（docs/mods/minimap.md）。1 秒 150 チャンク前後（開いているときの最大の約半分）を保てる一番小さい値で、
+	// CPU を使い切らずクライアントの描画とチャンク構築に余裕を残す
+	private static final int BACKGROUND_GENERATING = 16;
 	// ワールドに読み込まれたチャンクから色を出すのはメインスレッドなので、1 tick に使う時間を絞る
 	private static final long LOADED_BUDGET_NANOS = 2_000_000;
 	// 同時に生成する数。遅れていなければ 1 秒ごとに増やし、遅れたら半分にする

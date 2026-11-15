@@ -1,10 +1,9 @@
 package com.omuraisu.minimap.client;
 
-import com.omuraisu.minimap.TerrainPreview;
 import com.omuraisu.minimap.TerrainRegions;
 import com.omuraisu.minimap.TerrainTile;
 
-// リージョン 1 つ分の、届いた色と版と下書き。チャンクはリージョンの中の番号（TerrainRegions.index）で並べる。
+// リージョン 1 つ分の、届いた色と版。チャンクはリージョンの中の番号（TerrainRegions.index）で並べる。
 // ファイルを読み終えたか・サーバーに知らせたか・ファイルに書いていない変化があるかも持つ（変えるのは FarSync）。
 // メインスレッドでだけ触る
 final class FarRegion {
@@ -18,7 +17,6 @@ final class FarRegion {
 	final byte[][] tiles = new byte[TerrainRegions.COUNT][];
 	final int[] stamps = new int[TerrainRegions.COUNT];
 	int count;
-	byte[] preview;
 	// ファイルを読み終えた
 	boolean loaded;
 	// サーバーに手持ちの版を知らせた
@@ -61,11 +59,6 @@ final class FarRegion {
 			}
 		}
 		loaded = true;
-	}
-
-	// 下書きの色（TerrainColors の packed id）。位置はリージョンの北西の角からのブロック数。下書きがなければ 0
-	int preview(int blockX, int blockZ) {
-		return preview == null ? 0 : Byte.toUnsignedInt(preview[blockX / TerrainPreview.STEP + blockZ / TerrainPreview.STEP * TerrainPreview.SIZE]);
 	}
 
 	// 届いたチャンクを、覚えておく形（TILE_BYTES）にする

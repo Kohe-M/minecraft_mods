@@ -6,10 +6,12 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.mojang.logging.LogUtils;
 import com.omuraisu.minimap.TerrainViewer.RegionView;
@@ -32,6 +34,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ChunkLevel;
+import net.minecraft.server.level.ChunkTrackingView;
 import net.minecraft.server.level.ServerChunkCache;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -53,12 +56,11 @@ import net.minecraft.world.waypoints.WaypointTransmitter;
 //   ワールドに読み込まれたものはメインスレッドで、生成の途中のものは自前のスレッドで色にする
 // - セーブにあるチャンク: 版はリージョンファイルのヘッダーにある書いた時刻。ヘッダーを読むだけで、リージョン 1 つ分の有無と版が分かる。
 //   版が違うチャンクだけ、リージョンファイルを自前のスレッドで直接読んで色にする（vanilla の IO スレッドを使わない）
-// - 未生成のチャンク: まず下書き（TerrainPreviewer）をリージョンごとに送って地図を埋め、それから FEATURES まで生成する。
-//   同時に生成する数は、サーバーが予定より遅れていなければ増やし、遅れたら減らす。
+// - 未生成のチャンク: FEATURES まで生成してから送る。同時に生成する数は、サーバーが予定より遅れていなければ増やし、遅れたら減らす。
 //   地図だけのチャンクの生成は、vanilla の生成の列の一番後ろに回す（MapPriority）
-// マップ画面を開いていない人の範囲（マップ距離）は、開いている人の後に、少しずつ進める
+// マップ画面を開いていない人の範囲（一番引いた地図に入る範囲）は、開いている人の後に、残りの予算で進める
 //
-// 分け方: 見ている人ごとの範囲と送信状態は TerrainViewer、次元ごとの版・下書き・生成は TerrainLevel、
+// 分け方: 見ている人ごとの範囲と送信状態は TerrainViewer、次元ごとの版・生成は TerrainLevel、
 // tick ごとの処理の予算は TerrainPace、自前のスレッドは TerrainWorkers。ここは一巡で比べ、読み込み・生成を始めて結果を渡す
 public final class TerrainServer {
 	// プレイヤーのいるチャンクからこの距離（チャンク）までしか送らない。どの解像度でも一番引いた地図が収まる
@@ -96,9 +98,11 @@ public final class TerrainServer {
 	// メモリにあるチャンクの版に使う時計。tick の終わりに色を作った後で進めるので、その後の変化は必ず新しい版になる
 	private int clock = 1;
 	private boolean failureLogged;
-	// セーブを読んだ数のうち、vanilla の経路で読んだ数。テストから確かめる
+	// セーブを読んだ数のうち、vanilla の経路で読んだ数・生成を始めた数・一巡で版を比べたチャンクの数。テストから確かめる
 	private final AtomicInteger reads = new AtomicInteger();
 	private final AtomicInteger vanillaReads = new AtomicInteger();
+	private final AtomicInteger generations = new AtomicInteger();
+	private final AtomicLong compared = new AtomicLong();
 
 	private TerrainServer(MinecraftServer server) {
 		this.server = server;
@@ -144,6 +148,18 @@ public final class TerrainServer {
 	public static int[] readCounts() {
 		TerrainServer server = current;
 		return server == null ? new int[2] : new int[] {server.reads.get(), server.vanillaReads.get()};
+	}
+
+	// 動いているサーバーで、地図のために生成を始めた数
+	public static int generationCount() {
+		TerrainServer server = current;
+		return server == null ? 0 : server.generations.get();
+	}
+
+	// 動いているサーバーで、一巡で版を比べたチャンクの数（飛ばしたリージョンのチャンクは数えない）
+	public static long comparedCount() {
+		TerrainServer server = current;
+		return server == null ? 0 : server.compared.get();
 	}
 
 	public static boolean isInRange(ChunkPos center, int x, int z) {
@@ -222,11 +238,12 @@ public final class TerrainServer {
 				}
 			}
 		}
+		// 開いていない人には、開いている人が使った残りの予算を回す。遅れている間は進めない
 		long deadline = pace.loadedDeadline();
 		int budget = pace.readBudget();
 		budget -= serve(open, openPlayers, now, deadline, budget);
 		if (!pace.behind()) {
-			serve(background, backgroundPlayers, now, deadline, Math.min(budget, TerrainPace.BACKGROUND_READS_PER_TICK));
+			serve(background, backgroundPlayers, now, deadline, budget);
 		}
 		for (Map.Entry<UUID, TerrainViewer> entry : viewers.entrySet()) {
 			ServerPlayer player = server.getPlayerList().getPlayer(entry.getKey());
@@ -302,16 +319,16 @@ public final class TerrainServer {
 				generate(state, chunk, viewer.background);
 			}
 		}
-		sendPreviews(viewer, state);
 
 		if (viewer.changed || viewer.passDone && now - viewer.passStart >= (viewer.incomplete ? 2 : viewer.background ? BACKGROUND_PASS_TICKS : PASS_TICKS)) {
-			startPass(viewer, state, center, now);
+			startPass(viewer, state, player, now);
 		}
-		return viewer.passDone ? 0 : scan(viewer, state, player, deadline, budget);
+		return viewer.passDone ? 0 : scan(viewer, state, deadline, budget);
 	}
 
 	// 一巡の始めに、範囲にかかるリージョンごとに、前の一巡から変わったかを確かめる。変わっていないリージョンは飛ばす
-	private void startPass(TerrainViewer viewer, TerrainLevel state, ChunkPos center, int now) {
+	private void startPass(TerrainViewer viewer, TerrainLevel state, ServerPlayer player, int now) {
+		ChunkPos center = player.chunkPosition();
 		viewer.changed = false;
 		viewer.incomplete = false;
 		viewer.candidates.clear();
@@ -332,8 +349,9 @@ public final class TerrainServer {
 		viewer.passCenterZ = Math.clamp(viewer.centerZ, viewer.passMinZ, viewer.passMaxZ);
 		viewer.maxRing = Math.max(Math.max(viewer.passCenterX - viewer.passMinX, viewer.passMaxX - viewer.passCenterX),
 				Math.max(viewer.passCenterZ - viewer.passMinZ, viewer.passMaxZ - viewer.passCenterZ));
-		// 開いていない人は、プレイヤーが読み込んでいるチャンクを飛ばすので、動いたら飛ばすチャンクも変わる
-		viewer.signature = viewer.background ? center.pack() : Long.MIN_VALUE;
+		// 開いていない人は、プレイヤーが読み込んでいるチャンク（追跡範囲）を飛ばす。飛ばすのは一巡の始めの追跡範囲で、
+		// プレイヤーが動いて追跡範囲が変わったら、かかっていた・いまかかっているリージョンだけを比べ直す
+		viewer.tracking = viewer.background ? player.getChunkTrackingView() : null;
 		viewer.regionMinX = TerrainRegions.coordinate(viewer.passMinX);
 		viewer.regionMinZ = TerrainRegions.coordinate(viewer.passMinZ);
 		viewer.regionWidth = TerrainRegions.coordinate(viewer.passMaxX) - viewer.regionMinX + 1;
@@ -359,10 +377,11 @@ public final class TerrainServer {
 				region.header = state.header(key, now, HEADER_TICKS);
 				region.epoch = state.epoch(key);
 				region.dirty = false;
+				region.tracked = overlaps(viewer.tracking, region);
 				region.skip = region.clean && region.header != null && region.cleanHeader == region.header && region.cleanEpoch == region.epoch
-						&& region.cleanSignature == viewer.signature && region.cleanMinX <= region.minX && region.cleanMinZ <= region.minZ
+						&& (!region.cleanTracked && !region.tracked || Objects.equals(region.cleanTracking, viewer.tracking))
+						&& region.cleanMinX <= region.minX && region.cleanMinZ <= region.minZ
 						&& region.cleanMaxX >= region.maxX && region.cleanMaxZ >= region.maxZ;
-				region.absent = !region.previewed && region.header != null && hasAbsent(region);
 				if (region.header == null) {
 					viewer.incomplete = true;
 				}
@@ -374,55 +393,28 @@ public final class TerrainServer {
 		viewer.passOrder = order;
 	}
 
-	// 範囲の中に、セーブにないチャンクがあるか（下書きが要るか）
-	private static boolean hasAbsent(RegionView region) {
-		int[] stamps = region.header.stamps();
-		for (int z = region.minZ; z <= region.maxZ; z++) {
-			for (int x = region.minX; x <= region.maxX; x++) {
-				if (stamps[TerrainRegions.index(x, z)] == 0) {
-					return true;
-				}
-			}
+	// リージョンのいまの一巡の範囲が、追跡範囲（null ならない）にかかるか。追跡範囲は中心から描画距離 + 1 の四角に収まる
+	private static boolean overlaps(ChunkTrackingView tracking, RegionView region) {
+		if (tracking == null || tracking == ChunkTrackingView.EMPTY) {
+			return false;
 		}
-		return false;
-	}
-
-	// 未生成のチャンクがあるリージョンの下書きを、中心に近い順に送る。作るのは自前のスレッドで、作ったものは覚えておく
-	private void sendPreviews(TerrainViewer viewer, TerrainLevel state) {
-		if (state.previewer == null) {
-			return;
+		if (tracking instanceof ChunkTrackingView.Positioned positioned) {
+			int reach = positioned.viewDistance() + 1;
+			ChunkPos center = positioned.center();
+			return region.minX <= center.x() + reach && region.maxX >= center.x() - reach
+					&& region.minZ <= center.z() + reach && region.maxZ >= center.z() - reach;
 		}
-		for (RegionView region : viewer.passOrder) {
-			if (region.previewed || !region.absent) {
-				continue;
-			}
-			long key = ChunkPos.pack(region.x, region.z);
-			byte[] colors = state.preview(key);
-			if (colors != null) {
-				viewer.previews.add(new TerrainPreview(viewer.dimension, region.x, region.z, colors));
-				region.previewed = true;
-			} else if (state.previewing.size() < TerrainWorkers.COUNT && state.previewing.add(key)) {
-				TerrainPreviewer previewer = state.previewer;
-				workers.run(() -> previewer.region(region.x, region.z), (made, failure) -> {
-					state.previewing.remove(key);
-					if (made == null) {
-						// ほかの mod が地形の作りを変えているなど。下書きなしで、生成した分だけを出す
-						LOGGER.warn("Failed to preview terrain of {}, previews are disabled", state.level.dimension().identifier(), failure);
-						state.previewer = null;
-					} else {
-						state.rememberPreview(key, made);
-					}
-				});
-			}
-		}
+		// 知らない形の追跡範囲は、どこにでもかかるとみなす
+		return true;
 	}
 
 	// 中心から外へ四角く回りながら、クライアントの持っている版と今の版を比べる。1 tick に比べる数と読み始める数を超えたら、
 	// 続きは次の tick に回す。セーブを読み始めた数を返す
-	private int scan(TerrainViewer viewer, TerrainLevel state, ServerPlayer player, long deadline, int budget) {
+	private int scan(TerrainViewer viewer, TerrainLevel state, long deadline, int budget) {
 		ServerLevel level = state.level;
 		boolean ceiling = level.dimensionType().hasCeiling();
 		Long2ObjectMap<IntArrayList> batches = new Long2ObjectOpenHashMap<>();
+		ChunkTrackingView tracking = viewer.tracking;
 		int visited = 0;
 		int started = 0;
 		scan:
@@ -455,6 +447,7 @@ public final class TerrainServer {
 					continue;
 				}
 				if (++visited > SCAN_PER_TICK) {
+					visited--;
 					break scan;
 				}
 				long chunk = ChunkPos.pack(x, z);
@@ -466,7 +459,7 @@ public final class TerrainServer {
 				ChunkAccess loaded = state.inMemory(chunk);
 				if (loaded != null) {
 					// 開いていない間は、クライアントが手元の地形で描けるチャンクは送らない（開いてから送る）
-					if (viewer.background && player.getChunkTrackingView().contains(x, z)) {
+					if (tracking != null && tracking.contains(x, z)) {
 						continue;
 					}
 					if (region.header == null) {
@@ -536,7 +529,8 @@ public final class TerrainServer {
 					region.clean = !region.dirty && region.header != null;
 					region.cleanHeader = region.header;
 					region.cleanEpoch = region.epoch;
-					region.cleanSignature = viewer.signature;
+					region.cleanTracked = region.tracked;
+					region.cleanTracking = viewer.tracking;
 					region.cleanMinX = region.minX;
 					region.cleanMinZ = region.minZ;
 					region.cleanMaxX = region.maxX;
@@ -550,6 +544,7 @@ public final class TerrainServer {
 				read(viewer, state, batch.getLongKey(), Arrays.copyOfRange(indexes, from, Math.min(indexes.length, from + READ_BATCH)), ceiling);
 			}
 		}
+		compared.addAndGet(visited);
 		return started;
 	}
 
@@ -712,6 +707,7 @@ public final class TerrainServer {
 	// セーブにあったチャンク（ほかの誰かが生成した、地物を置く前で止まっていた）は、vanilla が読んで続きから進める
 	private void generate(TerrainLevel state, long chunk, boolean background) {
 		pace.startGenerating(background);
+		generations.incrementAndGet();
 		state.generating.add(chunk);
 		ChunkPos pos = ChunkPos.unpack(chunk);
 		ServerChunkCache source = state.level.getChunkSource();

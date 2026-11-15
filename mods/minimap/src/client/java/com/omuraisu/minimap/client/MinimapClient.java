@@ -14,7 +14,6 @@ import com.mojang.logging.LogUtils;
 import com.omuraisu.minimap.MapPlayerPositions;
 import com.omuraisu.minimap.Minimap;
 import com.omuraisu.minimap.PinList;
-import com.omuraisu.minimap.TerrainPreview;
 import com.omuraisu.minimap.TerrainRemoved;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.TerrainStamps;
@@ -40,9 +39,12 @@ public class MinimapClient implements ClientModInitializer {
 
 	public static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("minimap.txt");
 	private static final Logger LOGGER = LogUtils.getLogger();
-	// マップ距離（チャンク）。マップ画面を開いていない間も、この範囲の地形をサーバーから受け取っておく。0 なら開いたときだけ受け取る。
-	// 既定は、1080p で開いた地図を 1 段引いた（1 ブロック 2 画素）画面が収まる広さ。広げるほど、遊んでいる間に生成してセーブが増える
-	public static final int DEFAULT_MAP_DISTANCE = 32;
+	// マップ距離（チャンク）。マップ画面を開いていない間も、プレイヤーの周りの一番引いた地図に入る範囲を、プレイヤーからこの距離まで
+	// サーバーから受け取っておく。0 なら開いたときだけ受け取る。既定はサーバーが送る距離いっぱいで、範囲はウィンドウの形だけで決まる。
+	// 縮めるほど、遊んでいる間に生成するチャンクとセーブの増え方が減る
+	public static final int DEFAULT_MAP_DISTANCE = TerrainServer.RADIUS;
+	// 前の版の既定。前の版が作ったままのファイル（この値の 1 行だけ）は、新しい既定で作り直す
+	private static final String OLD_DEFAULT = "map_distance=32";
 	private static int mapDistance = DEFAULT_MAP_DISTANCE;
 
 	public static KeyMapping mapKey;
@@ -66,7 +68,6 @@ public class MinimapClient implements ClientModInitializer {
 		ClientPlayNetworking.registerGlobalReceiver(TerrainTiles.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainStamps.TYPE, (payload, context) -> FAR_TERRAIN.stamps(payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainRemoved.TYPE, (payload, context) -> FAR_TERRAIN.removed(payload));
-		ClientPlayNetworking.registerGlobalReceiver(TerrainPreview.TYPE, (payload, context) -> FAR_TERRAIN.preview(payload));
 		ClientPlayNetworking.registerGlobalReceiver(MapPlayerPositions.TYPE, (payload, context) -> {
 			if (context.client().gui.screen() instanceof MapScreen map) {
 				map.receivePlayerPositions(payload);
@@ -112,21 +113,21 @@ public class MinimapClient implements ClientModInitializer {
 	}
 
 	// config/minimap.txt に 1 行 1 つ「キー=値」。行ごとに読み、キーと値の前後の空白と知らない行は無視する。
-	// ファイルがなければ既定の値で作り、書ける項目を見せる
+	// ファイルがなければ既定の値で作り、書ける項目を見せる。前の版が既定の値で作ったままのファイルも作り直す
+	// （ユーザーが書いた値ではないので、新しい既定にする）
 	public static void load() {
 		mapDistance = DEFAULT_MAP_DISTANCE;
 		List<String> lines;
 		try {
 			lines = Files.readAllLines(CONFIG);
 		} catch (NoSuchFileException e) {
-			try {
-				Files.writeString(CONFIG, "map_distance=" + DEFAULT_MAP_DISTANCE + "\n");
-			} catch (IOException failure) {
-				// 書けなくても既定の値で動くが、黙って捨てずにログに出す
-				LOGGER.warn("Failed to save {}: {}", CONFIG, failure.toString());
-			}
+			writeDefault();
 			return;
 		} catch (IOException e) {
+			return;
+		}
+		if (lines.equals(List.of(OLD_DEFAULT))) {
+			writeDefault();
 			return;
 		}
 		for (String line : lines) {
@@ -137,6 +138,15 @@ public class MinimapClient implements ClientModInitializer {
 				} catch (NumberFormatException ignored) {
 				}
 			}
+		}
+	}
+
+	private static void writeDefault() {
+		try {
+			Files.writeString(CONFIG, "map_distance=" + DEFAULT_MAP_DISTANCE + "\n");
+		} catch (IOException failure) {
+			// 書けなくても既定の値で動くが、黙って捨てずにログに出す
+			LOGGER.warn("Failed to save {}: {}", CONFIG, failure.toString());
 		}
 	}
 

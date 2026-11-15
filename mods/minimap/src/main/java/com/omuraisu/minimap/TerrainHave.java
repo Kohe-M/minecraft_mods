@@ -10,7 +10,7 @@ import net.minecraft.resources.Identifier;
 // クライアントはリージョンを覚え始めたら（ファイルから読み終えたら）一度送り、捨てたら stamps を null にして送る。
 // 前と違う次元のものが届いたら、サーバーは前の次元の分をすべて忘れる（クライアントもそのとき全部知らせ直す）
 public record TerrainHave(Identifier dimension, int regionX, int regionZ, int[] stamps) implements CustomPacketPayload {
-	public static final Type<TerrainHave> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v4/have"));
+	public static final Type<TerrainHave> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v5/have"));
 	public static final StreamCodec<FriendlyByteBuf, TerrainHave> CODEC = CustomPacketPayload.codec(TerrainHave::write, TerrainHave::read);
 
 	public boolean forgotten() {

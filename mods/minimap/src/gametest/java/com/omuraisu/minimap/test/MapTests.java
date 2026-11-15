@@ -72,6 +72,38 @@ final class MapTests {
 		});
 	}
 
+	// サーバーが遅れず、地図のためにチャンクをワールドへ読み込んでいないかを見る。作ったときから数え、sample を 100 tick ごとに呼ぶ
+	// （tick の時間は直近 100 tick の分しか残らない）
+	static final class ServerWatch {
+		private final TestSingleplayerContext singleplayer;
+		private long maxTick;
+
+		ServerWatch(TestSingleplayerContext singleplayer) {
+			this.singleplayer = singleplayer;
+			singleplayer.getServer().runOnServer(server -> FULL_LOADS.clear());
+		}
+
+		void sample() {
+			maxTick = Math.max(maxTick, singleplayer.getServer().computeOnServer(server -> Arrays.stream(server.getTickTimesNanos()).max().orElse(0)));
+		}
+
+		// 1 tick が 1 秒を超えた・直近の平均が 50 ms を超えた・地図のためにワールドへ読み込んだ、なら失敗
+		void check(ClientGameTestContext context, String name) {
+			sample();
+			long averageTick = singleplayer.getServer().computeOnServer(server -> server.getAverageTickTimeNanos());
+			int loads = singleplayer.getServer().computeOnServer(server -> FULL_LOADS.size());
+			int chunks = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD));
+			System.out.printf("%s: %d chunks, max tick %d ms, average tick %d ms, loaded into the world %d%n",
+					name, chunks, maxTick / 1_000_000, averageTick / 1_000_000, loads);
+			if (loads > 100) {
+				throw new AssertionError(name + ": " + loads + " chunks were loaded into the world for the map");
+			}
+			if (maxTick > 1_000_000_000L || averageTick > 50_000_000L) {
+				throw new AssertionError(name + ": server fell behind (max tick " + maxTick / 1_000_000 + " ms, average " + averageTick / 1_000_000 + " ms)");
+			}
+		}
+	}
+
 	// 前のシナリオや前の実行がマップ距離を変えていても、既定の値で始める
 	static void resetConfig(ClientGameTestContext context) {
 		setMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);

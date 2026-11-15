@@ -23,7 +23,6 @@ public class Minimap implements ModInitializer {
 		PayloadTypeRegistry.clientboundPlay().register(TerrainTiles.TYPE, TerrainTiles.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(TerrainStamps.TYPE, TerrainStamps.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(TerrainRemoved.TYPE, TerrainRemoved.CODEC);
-		PayloadTypeRegistry.clientboundPlay().register(TerrainPreview.TYPE, TerrainPreview.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(MapPlayerPositions.TYPE, MapPlayerPositions.CODEC);
 		PayloadTypeRegistry.serverboundPlay().register(PinEdit.TYPE, PinEdit.CODEC);
 		PayloadTypeRegistry.clientboundPlay().register(PinList.TYPE, PinList.CODEC);

@@ -52,7 +52,7 @@ import net.minecraft.world.level.chunk.storage.SerializableChunkData;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.material.MapColor;
 
-// 遠くの地形: 設定・セーブから読む・生成の順番・マップ距離・開き直したときに読み直さない・自然な地形
+// 遠くの地形: 設定・セーブから読む・生成の順番・マップ距離・開き直したときに読み直さない・動いたときに比べ直す数・自然な地形
 public class FarTerrainTest implements Scenario {
 	@Override
 	public String name() {
@@ -94,6 +94,7 @@ public class FarTerrainTest implements Scenario {
 			if (reads[0] * 4 > known) {
 				throw new AssertionError("chunks that did not change should not be read again: read " + reads[0] + " of " + known);
 			}
+			testMoveCompares(context, singleplayer);
 		}
 
 		testNaturalTerrain(context);
@@ -143,6 +144,21 @@ public class FarTerrainTest implements Scenario {
 			context.runOnClient(client -> MinimapClient.load());
 			assertFileEquals(MinimapClient.CONFIG, "map_distance=" + MinimapClient.DEFAULT_MAP_DISTANCE + "\n");
 			assertMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
+			assertEquals("default map distance", TerrainServer.RADIUS, MinimapClient.DEFAULT_MAP_DISTANCE);
+
+			// 前の版が既定の値（32）で作ったままのファイルは、新しい既定で作り直す。ユーザーが書いた値は残す
+			for (String old : List.of("map_distance=32\n", "map_distance=32")) {
+				Files.writeString(MinimapClient.CONFIG, old);
+				context.runOnClient(client -> MinimapClient.load());
+				assertMapDistance(context, MinimapClient.DEFAULT_MAP_DISTANCE);
+				assertFileEquals(MinimapClient.CONFIG, "map_distance=" + MinimapClient.DEFAULT_MAP_DISTANCE + "\n");
+			}
+			for (String edited : List.of("map_distance=48\n", "map_distance = 32\n", "map_distance=32\n# memo\n")) {
+				Files.writeString(MinimapClient.CONFIG, edited);
+				context.runOnClient(client -> MinimapClient.load());
+				assertMapDistance(context, edited.contains("48") ? 48 : 32);
+				assertFileEquals(MinimapClient.CONFIG, edited);
+			}
 
 			setMapDistance(context, 999);
 			assertMapDistance(context, TerrainServer.RADIUS);
@@ -224,8 +240,6 @@ public class FarTerrainTest implements Scenario {
 		assertEquals("brightness of the north edge higher than the north chunk", MapColor.Brightness.HIGH.id, southColors[0] & 3);
 		assertEquals("brightness of the north edge as high as the north chunk", MapColor.Brightness.NORMAL.id, southColors[1] & 3);
 		assertEquals("brightness of the north edge lower than the north chunk", MapColor.Brightness.LOW.id, southColors[2] & 3);
-		// 平らなワールドは地表の高さを見積もれないので、下書きは届かない
-		assertEquals("preview in the flat world", 0, (int) context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.preview(OVERWORLD, plain.getMiddleBlockX(), plain.getMiddleBlockZ())));
 
 		// 開いている間にブロックが変わったチャンクは、色が届き直す
 		singleplayer.getServer().runOnServer(server -> {
@@ -392,18 +406,19 @@ public class FarTerrainTest implements Scenario {
 		}
 	}
 
-	// マップ画面を開いていなくても、プレイヤーの周りのマップ距離の分を頼んでおく。描画距離の外は FEATURES まで生成し、ワールドには読み込まない。
-	// 家の周りの地図のテストに重ならないよう、まだ地図に出したことのない南の遠くで確かめる
+	// マップ画面を開いていなくても、プレイヤーの周りの一番引いた地図に入る範囲を頼んでおく。描画距離の外は FEATURES まで生成し、
+	// ワールドには読み込まない。家の周りの地図のテストに重ならないよう、まだ地図に出したことのない南の遠くで確かめる。
+	// 範囲の形がウィンドウで決まることは background で確かめる。ここではマップ距離で小さく切り、範囲の角まで届くのを待つ
 	private static void testMapDistance(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		int renderDistance = context.computeOnClient(client -> client.options.getEffectiveRenderDistance());
-		int distance = MinimapClient.mapDistance();
+		int distance = 24;
+		setMapDistance(context, distance);
 		ChunkPos home = new ChunkPos(PLAYER_X >> 4, PLAYER_Z >> 4);
 
 		ChunkPos area = new ChunkPos(home.x(), home.z() + 400);
-		// プレイヤーの札で生成の進むチャンクより遠く、マップ距離の中
-		int reach = Math.min(distance - 2, renderDistance + ChunkLevel.RADIUS_AROUND_FULL_CHUNK + 2);
 		ChunkPos near = new ChunkPos(area.x() + renderDistance + 2, area.z() - 1);
-		ChunkPos inside = new ChunkPos(area.x() - reach, area.z() + 3);
+		// 範囲の角。プレイヤーの札で生成の進むチャンクより遠い
+		ChunkPos corner = new ChunkPos(area.x() - distance, area.z() + distance);
 		ChunkPos beyond = new ChunkPos(area.x() + distance + 6, area.z());
 		long start = context.computeOnClient(client -> client.level.getGameTime());
 		teleport(context, singleplayer, area.getMiddleBlockX(), area.getMiddleBlockZ());
@@ -421,17 +436,21 @@ public class FarTerrainTest implements Scenario {
 		if (!ordered) {
 			throw new AssertionError("generation for the map should be ordered after the player's chunks");
 		}
-		waitForFarTerrain(context, near, inside);
+		waitForFarTerrain(context, near, corner);
 		long elapsed = context.computeOnClient(client -> client.level.getGameTime()) - start;
 		System.out.printf("map-distance: %d chunks within %d ticks while the map was closed%n",
 				context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.count(OVERWORLD)), elapsed);
 		assertMapOpen(context, false);
-		assertNotLoadedByServer(singleplayer, inside);
-		ChunkStatus insideStatus = heldStatus(singleplayer, inside);
-		if (insideStatus == null) {
-			insideStatus = storedStatus(singleplayer, inside);
+		// 知らせた範囲は、プレイヤーのチャンクからマップ距離の四角（ウィンドウの一番引いた画面はもっと広い）
+		assertEquals("range requested while the map is closed",
+				new TerrainView(OVERWORLD, area.x() - distance, area.z() - distance, area.x() + distance, area.z() + distance, area.x(), area.z(), true),
+				context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.requested()));
+		assertNotLoadedByServer(singleplayer, corner);
+		ChunkStatus cornerStatus = heldStatus(singleplayer, corner);
+		if (cornerStatus == null) {
+			cornerStatus = storedStatus(singleplayer, corner);
 		}
-		assertEquals("status of the chunk generated for the map distance", ChunkStatus.FEATURES, insideStatus);
+		assertEquals("status of the chunk generated while the map is closed", ChunkStatus.FEATURES, cornerStatus);
 		// マップ距離の外は頼まない
 		context.waitTicks(100);
 		if (context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, beyond.x(), beyond.z())) != null) {
@@ -466,11 +485,33 @@ public class FarTerrainTest implements Scenario {
 		teleport(context, singleplayer, off.getMiddleBlockX(), off.getMiddleBlockZ());
 		context.waitTicks(100);
 		boolean offArrived = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.colors(OVERWORLD, offNear.x(), offNear.z()) != null);
-		setMapDistance(context, distance);
+		resetConfig(context);
 		if (offArrived) {
 			throw new AssertionError("far terrain should not be requested in the background when the map distance is 0");
 		}
 		teleport(context, singleplayer, PLAYER_X, PLAYER_Z);
+	}
+
+	// 開いていない間にプレイヤーが 1 チャンク動いても、範囲のすべてを比べ直さない。比べ直すのは、プレイヤーが読み込んでいる範囲（追跡範囲）に
+	// かかるリージョンと、範囲が広がった端のリージョンだけ。以前は動くたびに範囲のすべてのチャンク（ここでは 2.6 万）を比べ直していた
+	private static void testMoveCompares(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
+		TerrainView view = context.computeOnClient(client -> MinimapClient.FAR_TERRAIN.requested());
+		int chunks = (view.maxX() - view.minX() + 1) * (view.maxZ() - view.minZ() + 1);
+		long before = singleplayer.getServer().computeOnServer(server -> TerrainServer.comparedCount());
+		context.waitTicks(60);
+		long still = singleplayer.getServer().computeOnServer(server -> TerrainServer.comparedCount()) - before;
+		ChunkPos player = context.computeOnClient(client -> client.player.chunkPosition());
+		long moving = singleplayer.getServer().computeOnServer(server -> TerrainServer.comparedCount());
+		teleport(context, singleplayer, player.getMiddleBlockX() + 16, player.getMiddleBlockZ());
+		long moved = singleplayer.getServer().computeOnServer(server -> TerrainServer.comparedCount()) - moving;
+		System.out.printf("far-terrain-compares: %d chunks in the range, %d compared while standing for 60 ticks, %d after moving one chunk%n",
+				chunks, still, moved);
+		if (still * 4 > chunks) {
+			throw new AssertionError("standing still should compare few chunks but compared " + still + " of " + chunks);
+		}
+		if (moved * 4 > chunks) {
+			throw new AssertionError("moving one chunk should compare few chunks but compared " + moved + " of " + chunks);
+		}
 	}
 
 	// 地表に 1 つ積む。Level.getHeight は読み込まれていないチャンクでは一番下を返すので、チャンクから高さを取る

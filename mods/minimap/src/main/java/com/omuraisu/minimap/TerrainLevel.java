@@ -8,7 +8,6 @@ import com.omuraisu.minimap.mixin.SimpleRegionStorageAccessor;
 
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -22,7 +21,7 @@ import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ImposterProtoChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 
-// 次元ごとの、地図の地形の状態。チャンクの版（リージョンファイルのヘッダー・メモリの変化）、下書き、生成しているチャンク、生成の順番。
+// 次元ごとの、地図の地形の状態。チャンクの版（リージョンファイルのヘッダー・メモリの変化）、生成しているチャンク、生成の順番。
 // メインスレッドでだけ触る（自前のスレッドの仕事は TerrainWorkers.run の後始末で結果を受け取る）
 final class TerrainLevel {
 	// メモリから外れたチャンクが書かれる（ヘッダーの版が変わる）のを待つ tick。保存を止めているサーバーでは書かれないので、いつまでも待たない。
@@ -32,17 +31,10 @@ final class TerrainLevel {
 	private static final int SEEN_SECONDS = 120;
 	// これより使っていないヘッダーを捨てる。捨てる間隔も同じ
 	static final int PRUNE_TICKS = 600;
-	// 覚えておく下書きの数（1 つ 16 KiB）
-	private static final int PREVIEW_CACHE = 256;
 
 	final ServerLevel level;
 	private final TerrainWorkers workers;
 	private RegionReader reader;
-	// 下書きを作れない次元なら null
-	TerrainPreviewer previewer;
-	// 作った下書き（古い順）と、作っているリージョン
-	private final Long2ObjectLinkedOpenHashMap<byte[]> previews = new Long2ObjectLinkedOpenHashMap<>();
-	final LongSet previewing = new LongOpenHashSet();
 	private final Long2ObjectMap<HeaderEntry> headers = new Long2ObjectOpenHashMap<>();
 	// 生成しているチャンク
 	final LongSet generating = new LongOpenHashSet();
@@ -64,7 +56,6 @@ final class TerrainLevel {
 	TerrainLevel(ServerLevel level, TerrainWorkers workers) {
 		this.level = level;
 		this.workers = workers;
-		this.previewer = TerrainPreviewer.create(level);
 		var dispatcher = ((ChunkMapInvoker) level.getChunkSource().chunkMap).minimap$worldgenTaskDispatcher();
 		this.queue = (MapPriority.Queue) ((ChunkTaskDispatcherAccessor) dispatcher).minimap$queue();
 		queue.minimap$setPriority(priority);
@@ -93,18 +84,6 @@ final class TerrainLevel {
 			reader = new RegionReader(((RegionFileStorageAccessor) (Object) storage).minimap$folder());
 		}
 		return reader;
-	}
-
-	// 作ってある下書き。あれば新しいものとして扱う
-	byte[] preview(long region) {
-		return previews.getAndMoveToLast(region);
-	}
-
-	void rememberPreview(long region, byte[] colors) {
-		previews.putAndMoveToLast(region, colors);
-		if (previews.size() > PREVIEW_CACHE) {
-			previews.removeFirst();
-		}
 	}
 
 	// 読んであるヘッダー。まだなら null。maxAge より古ければ自前のスレッドで読み直す（次の一巡から新しいものになる）

@@ -8,7 +8,6 @@
 		"ChunkTaskPriorityQueueMixin",
 		"IOWorkerAccessor",
 		"LevelChunkMixin",
-		"MaterialRuleContextInvoker",
 		"RegionFileStorageAccessor",
 		"ServerWaypointManagerAccessor",
 		"SimpleRegionStorageAccessor"

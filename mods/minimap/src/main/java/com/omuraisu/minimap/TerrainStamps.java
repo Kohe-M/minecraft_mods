@@ -9,7 +9,7 @@ import net.minecraft.resources.Identifier;
 // クライアントは版だけを書き換える。色（1 チャンク 330 バイトほど）を送り直さずに済む
 public record TerrainStamps(Identifier dimension, long[] chunks, int[] stamps) implements CustomPacketPayload {
 	public static final int MAX_CHUNKS = 2048;
-	public static final Type<TerrainStamps> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v4/stamps"));
+	public static final Type<TerrainStamps> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v5/stamps"));
 	public static final StreamCodec<FriendlyByteBuf, TerrainStamps> CODEC = CustomPacketPayload.codec(TerrainStamps::write, TerrainStamps::read);
 
 	private static TerrainStamps read(FriendlyByteBuf buf) {

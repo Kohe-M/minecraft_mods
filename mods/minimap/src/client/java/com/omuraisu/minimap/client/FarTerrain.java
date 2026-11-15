@@ -5,8 +5,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.mojang.blaze3d.platform.Window;
 import com.omuraisu.minimap.TerrainColors;
-import com.omuraisu.minimap.TerrainPreview;
 import com.omuraisu.minimap.TerrainRegions;
 import com.omuraisu.minimap.TerrainRemoved;
 import com.omuraisu.minimap.TerrainServer;
@@ -24,14 +24,13 @@ import net.minecraft.world.level.ChunkPos;
 // 開いている間はリージョンごとのテクスチャにして描く。読み込み済みのチャンクは MapTerrain に任せる。
 // サーバーには見ている範囲（TerrainView）と、リージョンごとに持っている色の版（TerrainHave）を知らせるだけで、
 // 何を送るかはサーバーが決める。届いた色は版と一緒にファイルにも残し（FarCache）、次に入ったときは版の違うチャンクだけが届く。
-// まだ生成していない場所には、サーバーが見積もった下書き（TerrainPreview）を描き、本物の色が届いたチャンクから置き換える。
-// 開いていない間も、プレイヤーの周りのマップ距離の分を知らせておく
+// 色が届いていないチャンクは透明（背景の色）。開いていない間も、プレイヤーの周りの一番引いた地図に入る範囲を知らせておき、
+// 開いたときにすぐ出せるようにする
 //
-// 分け方: 次元ごとのリージョンは FarDimension、リージョン 1 つ分の色・版・下書きは FarRegion、
+// 分け方: 次元ごとのリージョンは FarDimension、リージョン 1 つ分の色・版は FarRegion、
 // ファイルとサーバーへの知らせは FarSync、テクスチャは FarTextures。ここは届いたパケットを覚え、どのリージョンを覚えておくかを決める
 public final class FarTerrain {
 	private static final int REGION_CHUNKS = TerrainRegions.CHUNKS;
-	private static final int REGION_BLOCKS = TerrainRegions.BLOCKS;
 	// 開いていない間に、離れたリージョンを捨てる間隔と、届いた色をファイルに書く間隔
 	private static final int BACKGROUND_PRUNE_INTERVAL = 200;
 	private static final int BACKGROUND_SAVE_INTERVAL = 1200;
@@ -75,11 +74,9 @@ public final class FarTerrain {
 		return count;
 	}
 
-	// 下書きの色（TerrainColors の packed id）。届いていなければ 0。テストから確かめる
-	public int preview(Identifier dimension, int blockX, int blockZ) {
-		FarDimension cache = dimensions.get(dimension);
-		FarRegion region = cache == null ? null : cache.region(blockX >> 4, blockZ >> 4);
-		return region == null ? 0 : region.preview(Math.floorMod(blockX, REGION_BLOCKS), Math.floorMod(blockZ, REGION_BLOCKS));
+	// 最後にサーバーに知らせた範囲。知らせていなければ null。テストから確かめる
+	public TerrainView requested() {
+		return sync.sent();
 	}
 
 	// 北の端の行は、北のチャンクの色が届いていればその高さと比べて明るさを決める。南のチャンクが先に届いていれば、その北の端も決め直す。
@@ -145,17 +142,6 @@ public final class FarTerrain {
 		}
 	}
 
-	// まだ生成していない場所の下書き。色の届いていないチャンクに描く
-	void preview(TerrainPreview payload) {
-		FarDimension cache = dimensions.get(payload.dimension());
-		FarRegion region = cache == null ? null : cache.regions.get(ChunkPos.pack(payload.regionX(), payload.regionZ()));
-		if (region == null) {
-			return;
-		}
-		region.preview = payload.colors();
-		textures.repaintPreview(cache, region);
-	}
-
 	// 接続するたびに、そのワールド・サーバーの保存先を開く。null なら残さない
 	void openCache(Path root) {
 		sync.open(root);
@@ -171,7 +157,21 @@ public final class FarTerrain {
 		prune(client, dimension(dimension), player);
 	}
 
-	// マップ画面を開いていない間、毎 tick 呼ぶ。プレイヤーの周り distance チャンク（マップ距離）を見ている範囲としてサーバーに知らせ、
+	// マップ画面を開いていない間も知らせておく範囲（チャンクの座標。{西, 北, 東, 南}）。distance（マップ距離）が 0 なら null。
+	// プレイヤーを真ん中に、いまのウィンドウでマップ画面を一番引いたときに映るチャンクの四角を、マップ距離とサーバーが送る距離で切る。
+	// 正方形にしないのは、生成する数とセーブの増え方を画面の形の分（16:9 で正方形の半分ほど）に抑えるため
+	static int[] around(Minecraft client, ChunkPos player, int distance) {
+		if (distance <= 0) {
+			return null;
+		}
+		Window window = client.getWindow();
+		int[] reach = MapScreen.zoomedOutReach(window.getWidth(), window.getHeight());
+		int reachX = Math.min(Math.min(reach[0], distance), TerrainServer.RADIUS);
+		int reachZ = Math.min(Math.min(reach[1], distance), TerrainServer.RADIUS);
+		return new int[] {player.x() - reachX, player.z() - reachZ, player.x() + reachX, player.z() + reachZ};
+	}
+
+	// マップ画面を開いていない間、毎 tick 呼ぶ。プレイヤーの周り（around）を見ている範囲としてサーバーに知らせ、
 	// 開いたときにすぐ出せるようにする。distance が 0 なら知らせない
 	void tickBackground(Minecraft client, Identifier dimension, ChunkPos player, int distance) {
 		ticks++;
@@ -183,19 +183,20 @@ public final class FarTerrain {
 		if (ticks % BACKGROUND_PRUNE_INTERVAL == 0) {
 			prune(client, cache, player);
 		}
-		if (distance <= 0) {
+		int[] around = around(client, player, distance);
+		if (around == null) {
 			sync.cancel();
 			return;
 		}
-		int radius = Math.min(distance, TerrainServer.RADIUS);
-		sync.request(client, cache, new TerrainView(dimension, player.x() - radius, player.z() - radius, player.x() + radius, player.z() + radius,
-				player.x(), player.z(), true), ticks);
+		sync.request(client, cache, new TerrainView(dimension, around[0], around[1], around[2], around[3], player.x(), player.z(), true), ticks);
 	}
 
-	// マップ画面から毎 tick 呼ぶ。範囲はチャンクの座標で、center に近いものから届く。scale は 1 ブロックの実ピクセル。
-	// 手元で描けるチャンクも範囲に入れる。手元のテクスチャの端は丸めで 1 画素ずれることがあり、下に何もないとすき間が見えるため
+	// マップ画面から毎 tick 呼ぶ。範囲は画面に映っているチャンクの座標で、center に近いものから届く。scale は 1 ブロックの実ピクセル。
+	// 手元で描けるチャンクも範囲に入れる。手元のテクスチャの端は丸めで 1 画素ずれることがあり、下に何もないとすき間が見えるため。
+	// 画面が開いていない間の範囲（around）に収まっていれば、その範囲をまるごと頼む（中心は画面の中心）。画面の中から届き、残りも
+	// 開いている間の速さで届く。拡大縮小やその中での移動では範囲が変わらない。はみ出したら画面に映っている範囲だけを頼む
 	void tick(Minecraft client, Identifier dimension, ChunkPos player, double scale,
-			int minX, int minZ, int maxX, int maxZ, int centerX, int centerZ) {
+			int minX, int minZ, int maxX, int maxZ, int centerX, int centerZ, int distance) {
 		ticks++;
 		textures.prepare(client, dimension, scale);
 		minX = Math.max(minX, player.x() - TerrainServer.RADIUS);
@@ -208,7 +209,11 @@ public final class FarTerrain {
 		}
 		FarDimension cache = dimension(dimension);
 		cache.ceiling = client.level.dimensionType().hasCeiling();
-		sync.request(client, cache, new TerrainView(dimension, minX, minZ, maxX, maxZ, Math.clamp(centerX, minX, maxX), Math.clamp(centerZ, minZ, maxZ), false), ticks);
+		int[] around = around(client, player, distance);
+		int[] range = around != null && minX >= around[0] && minZ >= around[1] && maxX <= around[2] && maxZ <= around[3]
+				? around : new int[] {minX, minZ, maxX, maxZ};
+		sync.request(client, cache, new TerrainView(dimension, range[0], range[1], range[2], range[3],
+				Math.clamp(centerX, range[0], range[2]), Math.clamp(centerZ, range[1], range[3]), false), ticks);
 		textures.update(client, cache, minX, minZ, maxX, maxZ);
 	}
 

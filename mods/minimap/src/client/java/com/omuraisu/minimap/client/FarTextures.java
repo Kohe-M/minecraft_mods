@@ -93,7 +93,7 @@ final class FarTextures {
 			Texture texture = textures.get(key);
 			if (texture == null) {
 				FarRegion region = cache.regions.get(key);
-				if (region == null || region.count == 0 && region.preview == null) {
+				if (region == null || region.count == 0) {
 					continue;
 				}
 				texture = create(client, region, size);
@@ -125,19 +125,6 @@ final class FarTextures {
 		Texture texture = texture(cache, ChunkPos.pack(region.x, region.z));
 		if (texture != null) {
 			paint(texture.texture.getPixels(), region, level);
-			texture.dirty = true;
-		}
-	}
-
-	// 下書きが届いた。色の届いていないチャンクだけ塗り直す
-	void repaintPreview(FarDimension cache, FarRegion region) {
-		Texture texture = texture(cache, ChunkPos.pack(region.x, region.z));
-		if (texture != null) {
-			for (int index = 0; index < TerrainRegions.COUNT; index++) {
-				if (region.tiles[index] == null) {
-					paint(texture.texture.getPixels(), region, index % REGION_CHUNKS, index / REGION_CHUNKS, level);
-				}
-			}
 			texture.dirty = true;
 		}
 	}
@@ -183,15 +170,13 @@ final class FarTextures {
 	}
 
 	// リージョンの中のチャンク 1 つ分を塗る。1 画素に入る列のうち北西の 1 列の色にする。
-	// 色が届いていないチャンクは下書きの色、それもなければ透明にして背景の色を見せる
+	// 色が届いていないチャンクは透明にして背景の色を見せる
 	private static void paint(NativeImage image, FarRegion region, int chunkX, int chunkZ, int level) {
 		byte[] tile = region.tiles[chunkX + chunkZ * REGION_CHUNKS];
 		int texels = 16 >> level;
 		for (int tz = 0; tz < texels; tz++) {
 			for (int tx = 0; tx < texels; tx++) {
-				int x = tx << level;
-				int z = tz << level;
-				int packed = tile != null ? Byte.toUnsignedInt(tile[z * 16 + x]) : region.preview(chunkX * 16 + x, chunkZ * 16 + z);
+				int packed = tile != null ? Byte.toUnsignedInt(tile[(tz << level) * 16 + (tx << level)]) : 0;
 				image.setPixel(chunkX * texels + tx, chunkZ * texels + tz, ARGB[packed]);
 			}
 		}

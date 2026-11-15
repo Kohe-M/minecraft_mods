@@ -8,7 +8,7 @@ import net.minecraft.resources.Identifier;
 // クライアントが色を持っているのに、サーバーにはもうないチャンク（別のワールドの色が残っていた、など）。クライアントは色を消す
 public record TerrainRemoved(Identifier dimension, long[] chunks) implements CustomPacketPayload {
 	public static final int MAX_CHUNKS = 2048;
-	public static final Type<TerrainRemoved> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v4/removed"));
+	public static final Type<TerrainRemoved> TYPE = new Type<>(Identifier.fromNamespaceAndPath("minimap", "far_terrain_v5/removed"));
 	public static final StreamCodec<FriendlyByteBuf, TerrainRemoved> CODEC = CustomPacketPayload.codec(TerrainRemoved::write, TerrainRemoved::read);
 
 	private static TerrainRemoved read(FriendlyByteBuf buf) {

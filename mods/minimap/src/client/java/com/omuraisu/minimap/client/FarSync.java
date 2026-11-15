@@ -85,6 +85,11 @@ final class FarSync {
 		}
 	}
 
+	// 最後に知らせた範囲。知らせていなければ null
+	TerrainView sent() {
+		return sent;
+	}
+
 	// 見ている範囲がなくなったら、サーバーに止めてもらう
 	void cancel() {
 		if (sent != null && !sent.isEmpty() && ClientPlayNetworking.canSend(TerrainView.TYPE)) {

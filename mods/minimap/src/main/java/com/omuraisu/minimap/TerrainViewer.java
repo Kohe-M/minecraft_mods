@@ -15,6 +15,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.level.ChunkTrackingView;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 
@@ -30,7 +31,7 @@ final class TerrainViewer {
 	int maxZ;
 	int centerX;
 	int centerZ;
-	// マップ画面を開いていない（マップ距離の分を見ている）
+	// マップ画面を開いていない（プレイヤーの周りの決まった範囲を見ている）
 	boolean background;
 	// 範囲か知らせてきたリージョンが変わった。次の tick に一巡をやり直す
 	boolean changed;
@@ -58,7 +59,9 @@ final class TerrainViewer {
 	int maxRing;
 	int ring;
 	int step;
-	long signature;
+	// 開いていない人が一巡の始めに読み込んでいたチャンク（追跡範囲）。クライアントが手元の地形で描けるので、この一巡では送らない。
+	// 開いている人は null（すべて送る）
+	ChunkTrackingView tracking;
 	int regionMinX;
 	int regionMinZ;
 	int regionWidth;
@@ -70,7 +73,6 @@ final class TerrainViewer {
 	private final LongList stampChunks = new LongArrayList();
 	private final IntArrayList stampValues = new IntArrayList();
 	final LongList removed = new LongArrayList();
-	final List<TerrainPreview> previews = new ArrayList<>();
 
 	// 自前のスレッドで色を作り始めたときの状態
 	record Snapshot(int session, int feetY) {
@@ -107,7 +109,6 @@ final class TerrainViewer {
 		stampChunks.clear();
 		stampValues.clear();
 		removed.clear();
-		previews.clear();
 		passDone = true;
 		passRegions = null;
 		passOrder = List.of();
@@ -175,10 +176,6 @@ final class TerrainViewer {
 			}
 		}
 		removed.clear();
-		if (!previews.isEmpty() && ServerPlayNetworking.canSend(player, TerrainPreview.TYPE)) {
-			previews.forEach(preview -> ServerPlayNetworking.send(player, preview));
-		}
-		previews.clear();
 	}
 
 	// 見ている人が知らせてきたリージョン 1 つ分
@@ -189,7 +186,6 @@ final class TerrainViewer {
 		final int[] known;
 		// この接続で送った色のハッシュ（送っていなければ 0）。色が同じで版だけ変わったチャンクを見分ける
 		private int[] sent;
-		boolean previewed;
 
 		// いまの一巡で比べる範囲（チャンク）と、始めたときのヘッダー・メモリの変化の数
 		int minX;
@@ -198,17 +194,19 @@ final class TerrainViewer {
 		int maxZ;
 		RegionReader.Header header;
 		int epoch;
+		// 範囲が一巡の始めの追跡範囲にかかる（追跡範囲のチャンクを飛ばすことがある）
+		boolean tracked;
 		boolean skip;
 		// 送るもの・読むもの・生成するものがあった
 		boolean dirty;
-		// 範囲の中にセーブにないチャンクがあり、下書きが要る
-		boolean absent;
 
-		// 何も送るものがなかった一巡の条件。同じなら次の一巡で飛ばす
+		// 何も送るものがなかった一巡の条件。同じなら次の一巡で飛ばす。追跡範囲にかからなかったリージョンは、
+		// 飛ばしたチャンクがないので、追跡範囲が変わっても（プレイヤーが動いても）飛ばせる
 		boolean clean;
 		RegionReader.Header cleanHeader;
 		int cleanEpoch;
-		long cleanSignature;
+		boolean cleanTracked;
+		ChunkTrackingView cleanTracking;
 		int cleanMinX;
 		int cleanMinZ;
 		int cleanMaxX;

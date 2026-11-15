@@ -88,7 +88,7 @@ public class MapScreen extends Screen {
 			MinimapClient.FAR_TERRAIN.tick(minecraft, minecraft.level.dimension().identifier(), minecraft.player.chunkPosition(), scale(),
 					Mth.floor(worldX(0)) >> 4, Mth.floor(worldZ(0)) >> 4,
 					Mth.floor(worldX(window.getWidth())) >> 4, Mth.floor(worldZ(window.getHeight())) >> 4,
-					Mth.floor(centerX) >> 4, Mth.floor(centerZ) >> 4);
+					Mth.floor(centerX) >> 4, Mth.floor(centerZ) >> 4, MinimapClient.mapDistance());
 		}
 	}
 
@@ -118,12 +118,24 @@ public class MapScreen extends Screen {
 
 	// 実ピクセル / ブロック
 	public double scale() {
-		return unit() * Math.pow(2, zoom);
+		Window window = minecraft.getWindow();
+		return scale(window.getWidth(), window.getHeight(), zoom);
+	}
+
+	private static double scale(int windowWidth, int windowHeight, int zoom) {
+		return MinimapHud.pixelsPerBlock(windowWidth, windowHeight) * Math.pow(2, zoom);
 	}
 
 	private int unit() {
 		Window window = minecraft.getWindow();
 		return MinimapHud.pixelsPerBlock(window.getWidth(), window.getHeight());
+	}
+
+	// 一番引いた画面に映るチャンクの、真ん中のチャンクからの数（{横, 縦}）。開いたときの真ん中（プレイヤーの位置）が
+	// チャンクのどこにあっても端のチャンクまで入るよう、画面の幅と高さの半分（ブロック）を 16 で割って切り上げる
+	static int[] zoomedOutReach(int windowWidth, int windowHeight) {
+		double scale = scale(windowWidth, windowHeight, MIN_ZOOM);
+		return new int[] {Mth.ceil(windowWidth / scale / 32), Mth.ceil(windowHeight / scale / 32)};
 	}
 
 	// 入力欄より奥に描くので背景の段で描く
