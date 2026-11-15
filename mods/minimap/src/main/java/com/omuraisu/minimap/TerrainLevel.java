@@ -16,6 +16,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 
 import net.minecraft.server.level.ChunkHolder;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.util.Util;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ImposterProtoChunk;
@@ -24,8 +25,11 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 // 次元ごとの、地図の地形の状態。チャンクの版（リージョンファイルのヘッダー・メモリの変化）、下書き、生成しているチャンク、生成の順番。
 // メインスレッドでだけ触る（自前のスレッドの仕事は TerrainWorkers.run の後始末で結果を受け取る）
 final class TerrainLevel {
-	// メモリから外れたチャンクが書かれる（ヘッダーの版が変わる）のを待つ tick。保存を止めているサーバーでは書かれないので、いつまでも待たない
-	private static final int SAVE_WAIT_TICKS = 40;
+	// メモリから外れたチャンクが書かれる（ヘッダーの版が変わる）のを待つ tick。保存を止めているサーバーでは書かれないので、いつまでも待たない。
+	// 生成が続いて IO スレッドが混んでいると、書き終えるまでに数秒かかる
+	private static final int SAVE_WAIT_TICKS = 600;
+	// メモリの版を作った時刻を、メモリから外れた後もこれだけ（秒）覚えておく
+	private static final int SEEN_SECONDS = 120;
 	// これより使っていないヘッダーを捨てる。捨てる間隔も同じ
 	static final int PRUNE_TICKS = 600;
 	// 覚えておく下書きの数（1 つ 16 KiB）
@@ -49,9 +53,11 @@ final class TerrainLevel {
 	// セーブにあるが地物を置き終えていないチャンクと、読めなかったチャンクの、そのときの版。版が変わるまで読み直さない
 	final Long2IntMap unready = new Long2IntOpenHashMap();
 	final Long2IntMap failed = new Long2IntOpenHashMap();
-	// メモリから外れたのに気づいた tick と、そのときのヘッダーの版（awaitsSave）
+	// vanilla が書く中身のあるチャンクを、メモリで最後に見た時刻（秒。リージョンファイルのヘッダーの書いた時刻と同じ時計）。
+	// メモリから外れた後、ヘッダーの書いた時刻と比べて、その中身が書かれたかを見る（awaitsSave）
+	private final Long2IntMap memorySeen = new Long2IntOpenHashMap();
+	// メモリから外れたのに気づいた tick（awaitsSave）
 	private final Long2IntMap leftSince = new Long2IntOpenHashMap();
-	private final Long2IntMap leftStamp = new Long2IntOpenHashMap();
 	final MapPriority priority = new MapPriority();
 	private final MapPriority.Queue queue;
 
@@ -134,19 +140,25 @@ final class TerrainLevel {
 	}
 
 	// クライアントが持っている色はメモリにあったときのもので、チャンクはもうメモリにない。
-	// vanilla が書き終えるまでは、セーブにないか古い中身のままなので、ヘッダーの版が変わるのを少し待つ。
-	// 待たないと、古い中身を送ったり、生成し終えたチャンクをもう一度生成しようとしたりする
+	// vanilla が書く中身があったなら、書き終えるまでは、セーブにないか古い中身のままなので、ヘッダーの書いた時刻が
+	// 最後にメモリで見た時刻以降になるまで待つ。待たないと、古い中身を送ったり、生成し終えたチャンクをもう一度生成しようとしたりする。
+	// 書く中身を見ていなければ（読み込まれただけ・書かれない ImposterProtoChunk・時刻を覚えておく時間を過ぎた）、待っても書かれないので待たない。
+	// 保存を止めているサーバーでは書かれないので、SAVE_WAIT_TICKS で待つのをやめる
 	boolean awaitsSave(long chunk, int stamp, int now) {
+		int seen = memorySeen.get(chunk);
+		if (seen == 0 || stamp >= seen) {
+			leftSince.remove(chunk);
+			return false;
+		}
 		if (!leftSince.containsKey(chunk)) {
 			leftSince.put(chunk, now);
-			leftStamp.put(chunk, stamp);
 			return true;
 		}
-		if (leftStamp.get(chunk) == stamp && now - leftSince.get(chunk) < SAVE_WAIT_TICKS) {
+		if (now - leftSince.get(chunk) < SAVE_WAIT_TICKS) {
 			return true;
 		}
 		leftSince.remove(chunk);
-		leftStamp.remove(chunk);
+		memorySeen.remove(chunk);
 		return false;
 	}
 
@@ -157,12 +169,23 @@ final class TerrainLevel {
 		HeaderEntry entry = headers.get(TerrainRegions.key(ChunkPos.getX(chunk), ChunkPos.getZ(chunk)));
 		int saved = entry == null || entry.header == null ? 0 : entry.header.stamps()[TerrainRegions.index(ChunkPos.getX(chunk), ChunkPos.getZ(chunk))];
 		boolean unsaved = loaded instanceof ImposterProtoChunk imposter ? imposter.getWrapped().isUnsaved() : loaded.isUnsaved();
-		return saved != 0 && !unsaved ? saved : memoryStamp(chunk, clock);
+		if (saved != 0 && !unsaved) {
+			return saved;
+		}
+		// vanilla がメモリから外すときに書くのは、チャンクそのものが書いていない中身を持つときだけ。ImposterProtoChunk は中身が
+		// 変わっていても書かないので、書かれるのを待たない。ヘッダーをまだ読めていないだけなら、書いていない中身はない
+		return loaded.isUnsaved() ? memoryStamp(chunk, clock) : clockStamp(chunk, clock);
 	}
 
-	// まだ保存していないチャンクの版。初めて見たチャンクには、そのときの時計を付ける。メモリから外れて戻ってきたチャンクは
-	// 間に中身が変わっているかもしれないので、前と同じ版にならないようにするため（外れたチャンクの時計は prune で消える）
+	// vanilla が書く中身のあるチャンクの版。メモリから外れた後に書かれるのを待てるよう、見た時刻を覚える
 	int memoryStamp(long chunk, int clock) {
+		memorySeen.put(chunk, seconds());
+		return clockStamp(chunk, clock);
+	}
+
+	// メモリにあるチャンクの版。初めて見たチャンクには、そのときの時計を付ける。メモリから外れて戻ってきたチャンクは
+	// 間に中身が変わっているかもしれないので、前と同じ版にならないようにするため（外れたチャンクの時計は prune で消える）
+	private int clockStamp(long chunk, int clock) {
 		int value = changed.get(chunk);
 		if (value == 0) {
 			value = clock;
@@ -179,6 +202,8 @@ final class TerrainLevel {
 
 	void prune(int now) {
 		changed.long2IntEntrySet().removeIf(entry -> inMemory(entry.getLongKey()) == null);
+		int seconds = seconds();
+		memorySeen.long2IntEntrySet().removeIf(entry -> seconds - entry.getIntValue() > SEEN_SECONDS && inMemory(entry.getLongKey()) == null);
 		headers.long2ObjectEntrySet().removeIf(entry -> !entry.getValue().loading && now - entry.getValue().used >= PRUNE_TICKS);
 		if (unready.size() > 1 << 18) {
 			unready.clear();
@@ -187,13 +212,12 @@ final class TerrainLevel {
 			failed.clear();
 		}
 		// 待っている間に範囲から外れたチャンクは、戻ってきたときに待ち直す
-		leftSince.long2IntEntrySet().removeIf(entry -> {
-			if (now - entry.getIntValue() < 2 * SAVE_WAIT_TICKS) {
-				return false;
-			}
-			leftStamp.remove(entry.getLongKey());
-			return true;
-		});
+		leftSince.long2IntEntrySet().removeIf(entry -> now - entry.getIntValue() >= 2 * SAVE_WAIT_TICKS);
+	}
+
+	// リージョンファイルのヘッダーに書かれる時刻と同じ時計（RegionFile.getTimestamp）
+	private static int seconds() {
+		return (int) (Util.getEpochMillis() / 1000);
 	}
 
 	void close() {

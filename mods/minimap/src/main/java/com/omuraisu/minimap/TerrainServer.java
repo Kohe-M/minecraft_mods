@@ -514,8 +514,9 @@ public final class TerrainServer {
 					continue;
 				}
 				region.dirty = true;
-				if (have != 0) {
-					// クライアントは色を持っているが、もうない（別のワールドの色が残っていた、など）
+				// クライアントは色を持っているが、もうない（別のワールドの色が残っていた、など）。この接続でメモリから送った色（負の版）は、
+				// 書かれるのを待ちきれなかっただけなので消さない。消すと、読み込み直すまで地図に穴があく
+				if (have > 0 || have == TerrainTile.STALE) {
 					region.known[index] = 0;
 					viewer.removed.add(chunk);
 				}
