@@ -23,13 +23,6 @@
 - リージョンファイル（.mca）のヘッダーは 8 KiB。前半がチャンクごとの場所（0 はチャンクがない）、後半がチャンクを書いた時刻（秒）で、チャンクを書くたびに両方が書き直される。チャンクは変わったもの（`ChunkAccess.isUnsaved`）だけが書かれるので、時刻はチャンクの中身の版として使える
 - チャンクが `ChunkMap.pendingUnloads` から外れてから、IO スレッドがファイルに書き終えるまでには間がある（ふつうは 1 秒もかからない）。その間、ファイルにはチャンクがないか古い中身のまま
 - `ServerChunkCache.blockChanged` が呼ばれるのは、tick されているチャンク（`FullChunkStatus.BLOCK_TICKING` 以上）で、クライアントに知らせる変化（`UPDATE_CLIENTS`）だけ。コマンドで読み込んだだけのチャンクの変化は来ない。サーバーのブロックの変化をすべて知るには `LevelChunk.setBlockState`（変わらなければ null を返す）を見る
-- `ServerChunkEvents.CHUNK_LOAD` / `CHUNK_UNLOAD` は FULL のチャンク（`LevelChunk`）だけ。生成の途中のチャンク（`ProtoChunk`）では呼ばれない。FULL のチャンクが弱い札で読み込まれているときの `ImposterProtoChunk` は `isUnsaved()` がいつも false なので、`getWrapped()` の方を見る
-- 地形の密度の関数（`DensityFunction`）は `RandomState.getSampler` / `samplersWithContext(SamplerContext)` で `DensitySampler` にして使う。`DensityVolume`（大きさ・始点・刻み）を渡すと範囲をまとめて出せて、1 点ずつ（`sampleValue`）よりずっと速い。同じ範囲で何度も使う 2 次元のノイズは、`SamplerContext.builder().enableCaches()` の文脈なら使い回される（範囲が変わると捨てられる）。どのスレッドから呼んでもよい
-  - `InterpolatedFunction`（地形の密度はこれで 4 × 8 × 4 ブロックおきに計算して間を埋める）は、刻みが区切りと違う範囲を渡すと、1 ブロック刻みで全部計算してから間引く。区切りに合わない刻みで広い範囲を出すと遅い。1 列だけ（大きさ 1 × 高さ × 1）なら、その列の角だけを計算する
-  - `NoiseRouter` にあるのは気候（`temperature`・`vegetation`・`continents`・`erosion`・`depth`・`ridges`）と `chunkSurfaceLevel`・`finalDensity` だけ。`depth` は地表で 0、下ほど大きく、高さに比例する。`chunkSurfaceLevel` と `Aquifer.Config.surfaceLevel` は帯水層のための低めの見積もり（8 ブロック刻み）で、本物の地表より 10 ブロックほど低い
-  - 地形の密度は地表より上で 1 倍、下で 4 倍に効く（`noiseGradientDensity` の `quarterNegative`）。足される 3 次元のノイズは、地面を削るより盛る方に 4 倍効くので、`depth` が 0 の高さは本物の地表の平均より低い
-- 地表の規則（`MaterialRule`）は `compile(MaterialRuleContext)` で組み立ててから `tryApply(x, y, z)` で使う。`MaterialRuleContext` のコンストラクタと `updateXZ`・`updateY` は package-private。`MaterialSystem.topMaterial` は public だが、呼ぶたびに組み立て直す
-- バイオームの地物は `Biome.getGenerationSettings().features()`（段階ごとの `PlacedFeature`）。`PlacedFeature.getFeatures()` は、選んで置く地物（`RandomSelectorFeature` など）の中身も並べる。置く数は `RepeatingPlacement.count`、何回に 1 回かは `RarityFilter.chance` で分かる
-- ブロックのタグの `DIRT` は土だけ（草ブロックは `GRASS_BLOCKS`）。木が生える地面は `SUBSTRATE_OVERWORLD`
+- `ServerChunkEvents.CHUNK_LOAD` / `CHUNK_UNLOAD` は FULL のチャンク（`LevelChunk`）だけ。生成の途中のチャンク（`ProtoChunk`）では呼ばれない。FULL のチャンクが弱い札で読み込まれているときの `ImposterProtoChunk` は `isUnsaved()` がいつも false なので、`getWrapped()` の方を見る。`markUnsaved()` は包んだチャンクに印を付けるが、`tryMarkSaved()` がいつも false なので、そのままメモリから外れても vanilla は書かない
 - vanilla のクラスをソースで読むには `./gradlew :<mod>:genSources`（`.gradle/loom-cache/minecraftMaven/` に sources の jar ができる）
 - クラスの確認は `~/.gradle/caches/fabric-loom/minecraftMaven/net/minecraft/minecraft-merged-deobf/<MC>/*.jar` を javap する
