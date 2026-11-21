@@ -57,7 +57,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
    - 通常は `python tools/dev.py check --build` に対象の mod 名を渡す（例: `python tools/dev.py check --build minimap jori`）
    - リリースする場合は `python tools/dev.py release <mod> <patch|minor|major>` を使う（下の「タグ」）
    - 完了報告に `mods/<mod>/build/libs/` にできた jar のパスを載せる
-5. `git push --follow-tags` で、今いるブランチとタグを push する
+5. 通常の変更は `git push --follow-tags` で push する。リリース用のタグを付けたときは `dev.py release ... --push` か、`release` が表示するコマンドでタグを 1 件ずつ送る
 
 - テストが通らない、不具合が見つかったときは、報告で止めずに原因を調べて直し、テストが通るまで繰り返す
   - テストを消す・飛ばす・判定をゆるめて通すのは禁止。直すのは実装の側
@@ -73,7 +73,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 - `python tools/dev.py release sorter minor timber patch` で、版を上げるコミット（`chore(<mod>): <版> をリリース`）とタグをまとめて作る
   - 上げる mod（一緒に上げる jori も）を、いまと同じ中身でシナリオで絞らずに `dev.py test` で通した記録がなければ止まる。jar とゲームテストに入らない docs だけのコミットは、test の後に入っても通る（[docs/development.md](docs/development.md) の「テストの記録」）。`--no-test-check` で飛ばせるが、使うのはユーザーに言われたときだけ
   - 先に版を書き換えた状態で jar を作り（`:<mod>:assemble`。テストは `dev.py test` で済ませているので走らせない）、`dev.py check` と同じ検査をしてから、コミットしてタグを付ける。失敗したら版を元に戻すので、直して同じコマンドを走らせ直せばよい
-  - CI はないので、配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar` のこれ
+  - ローカルの jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar`。タグを push すると、GitHub Actions がそのタグから jar を作って検査し、対応する GitHub Release に添付する
   - jori に入っている mod を上げると、jori も一番大きい上げ方で一緒に上げる（`--no-bundle` で止める）
   - エージェントは `--trailer "Co-Authored-By: ..."` でコミットの末尾の行を足す。`--push` で push まで、`--dry-run` で何が上がるかだけ見る
   - jori は中の mod を上げた後のコミットにタグを付ける。jori のタグと jar に、上げた後の中の mod が入るようにするため

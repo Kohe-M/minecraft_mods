@@ -257,6 +257,23 @@ class ClientTimingsTest(Workspace):
         self.assertEqual("走らず", dev.describe_client("走らず", None))
 
 
+class PushReleaseTest(unittest.TestCase):
+    @mock.patch.object(dev.subprocess, "run")
+    def test_pushes_multiple_release_tags_separately(self, run):
+        tags = ["fullbright/1.0.0+26.3", "minimap/1.0.0+26.3", "sorter/1.0.0+26.3", "jori/1.0.0+26.3"]
+
+        dev.push_release_tags(tags)
+
+        push = ["git", "push", "--no-follow-tags", "origin"]
+        self.assertEqual([
+            mock.call(push, cwd=dev.ROOT, check=True),
+            mock.call([*push, "refs/tags/fullbright/1.0.0+26.3"], cwd=dev.ROOT, check=True),
+            mock.call([*push, "refs/tags/minimap/1.0.0+26.3"], cwd=dev.ROOT, check=True),
+            mock.call([*push, "refs/tags/sorter/1.0.0+26.3"], cwd=dev.ROOT, check=True),
+            mock.call([*push, "refs/tags/jori/1.0.0+26.3"], cwd=dev.ROOT, check=True),
+        ], run.call_args_list)
+
+
 class ReleaseCheckTest(Workspace):
     def record(self, mod, key, client="OK", vanilla="-", filtered=False, render=dev.SODIUM, ok=True):
         return {"id": f"{mod}-{key}", "content": {"keys": {mod: key}}, "filtered": filtered, "plan": {"render": render},

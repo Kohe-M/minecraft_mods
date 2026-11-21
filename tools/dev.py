@@ -1184,6 +1184,14 @@ def set_version(mod, version):
     return path
 
 
+def push_release_tags(tags):
+    """GitHub はタグを 4 件以上まとめて push すると Actions を起動しない。"""
+    push = ["git", "push", "--no-follow-tags", "origin"]
+    subprocess.run(push, cwd=ROOT, check=True)
+    for tag in tags:
+        subprocess.run([*push, f"refs/tags/{tag}"], cwd=ROOT, check=True)
+
+
 def command_release(args):
     plan = plan_release(args)
     for item in plan:
@@ -1243,10 +1251,14 @@ def command_release(args):
         if not committed and paths:
             git("checkout", "--", *paths)
 
+    tags = [item["tag"] for item in plan]
     if args.push:
-        subprocess.run(["git", "push", "--follow-tags"], cwd=ROOT, check=True)
+        push_release_tags(tags)
     else:
-        print("push はまだ。git push --follow-tags")
+        print("push はまだ。次の順番で push すると GitHub Actions が jar を公開する:")
+        print("  git push --no-follow-tags origin")
+        for tag in tags:
+            print(f"  git push --no-follow-tags origin refs/tags/{tag}")
     return 0
 
 
@@ -1286,7 +1298,7 @@ def main():
     release = commands.add_parser("release", help="mod_version を上げて jar を作り、確かめてからコミットしてタグを付ける")
     release.add_argument("items", nargs="+", metavar="mod level", help=f"mod と上げ方（{' / '.join(LEVELS)}）の組")
     release.add_argument("--no-bundle", action="store_true", help="jori を一緒に上げない")
-    release.add_argument("--push", action="store_true", help="最後に git push --follow-tags する")
+    release.add_argument("--push", action="store_true", help="最後に origin へブランチとタグを push する（タグは 1 件ずつ）")
     release.add_argument("--trailer", action="append", default=[], help="コミットメッセージの末尾に足す行（Co-Authored-By など）")
     release.add_argument("--dry-run", action="store_true", help="何を上げるかだけ出す")
     release.add_argument("--no-test-check", action="store_true", help="いまの中身で test を通した記録があるかを確かめない")

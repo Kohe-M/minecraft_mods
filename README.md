@@ -19,7 +19,7 @@
 
 `mods/<mod>` に mod ごとの Gradle プロジェクトを置く。構成と仕組みは [docs/architecture.md](docs/architecture.md)、mod ごとの仕様は [docs/mods/](docs/mods/)、開発の手順は [docs/development.md](docs/development.md)。開発の決まりごとは [AGENTS.md](AGENTS.md)。
 
-成果物は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。リリース（`python tools/dev.py release`）すると `mods/<mod>/build/libs/` にできる。
+配布用の jar は [GitHub Releases](https://github.com/Kohe-M/minecraft_mods/releases) からダウンロードできます。ファイル名は `<mod>-<mod_version>+<minecraft_version>.jar`（例: `sorter-1.0.0+26.3.jar`）。ローカルでリリースを作ると `mods/<mod>/build/libs/` にもできます。
 
 ## Jori の設定
 
@@ -44,7 +44,7 @@ git branch mc/26.3 && git push -u origin mc/26.3
 
 1. ルートの `gradle.properties` を新しいバージョンに書き換える
 2. `python tools/dev.py test --all` が通るまで各 mod を直してコミットする
-3. `python tools/dev.py release <mod> port ...` で、`mod_version` は変えずに新しい MC のタグを付ける（`<mod>/<mod_version>+<MC>`）
+3. `python tools/dev.py release <mod> port ... --push` で、`mod_version` は変えずに新しい MC のタグを付けて公開する（`<mod>/<mod_version>+<MC>`）
 
 旧バージョンの修正は `mc/<MC>` で行い、必要なら `main` に cherry-pick する。
 

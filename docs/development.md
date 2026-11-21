@@ -96,7 +96,9 @@ python tools/dev.py release fullbright port minimap port # MC の移植。版は
   3. 版を書き換えた状態で jar を作り（`:<mod>:assemble`）、check の jar の検査をする
   4. 通ったら mod ごとにコミットしてタグを付ける。port の mod はいまのコミットにタグだけ付ける
 - 3 で失敗したら版を元に戻して止まる。コミットもタグも残らないので、直してから同じコマンドをもう一度走らせればよい
-- 配る jar は `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar`。版を上げたコミットと jar の中身は同じ（jar を作ってからコミットまでに変わるのは、ほかの mod の `gradle.properties` だけ）
+- ローカルには `mods/<mod>/build/libs/<mod>-<版>+<MC>.jar` ができる。`--push` でブランチを先に push し、作ったタグを 1 件ずつ送る。GitHub は 4 件以上のタグをまとめて push すると Actions を起動しないため、後から push するときも `release` が表示するコマンドを順に使う
+- GitHub Actions の `Release jar` はタグのコミットで `python3 tools/dev.py check --build <mod>` を実行し、検査が通った jar をそのタグの GitHub Release に添付する。jori の中身もタグの時点の版で検査する
+- ビルドや公開に失敗したら、Actions で失敗したジョブを再実行する。タグがすでに GitHub にあり、実行が作られていない場合は `Release jar` の **Run workflow** でタグを指定する。`publish` をオンにすると、検査の後に公開する
 
 ### テストの記録
 

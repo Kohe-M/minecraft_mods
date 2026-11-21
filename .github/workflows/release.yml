@@ -1,0 +1,80 @@
+name: Release jar
+
+on:
+  push:
+    tags:
+      - '*/*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '対象のタグ（例: jori/1.10.0+26.3）'
+        required: true
+        type: string
+      publish:
+        description: '検査が通った jar を公開する'
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name == 'workflow_dispatch' || github.event.created
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || '' }}
+          persist-credentials: false
+
+      - name: タグとバージョンを照合
+        id: target
+        run: |
+          PYTHONPATH=tools python3 - <<'PY'
+          import os
+
+          import dev
+
+          tag = os.environ["RELEASE_TAG"]
+          mod = tag.partition("/")[0]
+          dev.check_mods([mod])
+          expected = f"{mod}/{dev.mod_version(mod)}+{dev.minecraft_version()}"
+          if tag != expected:
+              raise SystemExit(f"タグ {tag} と設定の {expected} が一致しない")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              print(f"mod={mod}", file=output)
+              print(f"java={dev.root_property('java_version')}", file=output)
+              print(f"jar={dev.rel(dev.jar_path(mod))}", file=output)
+          PY
+
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6
+        with:
+          distribution: temurin
+          java-version: ${{ steps.target.outputs.java }}
+
+      - name: jar のビルドと検査
+        env:
+          MOD: ${{ steps.target.outputs.mod }}
+        run: |
+          chmod +x gradlew
+          python3 tools/dev.py check --build "$MOD"
+
+      - name: GitHub Release を公開
+        if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JAR: ${{ steps.target.outputs.jar }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft,assets 2>/dev/null |
+              jq -e --arg jar "${JAR##*/}" '(.isDraft | not) and any(.assets[]; .name == $jar and .state == "uploaded")' >/dev/null; then
+            echo '公開済みの jar があるため終了'
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" "$JAR" --verify-tag --title "$RELEASE_TAG" --notes-from-tag --latest=false
