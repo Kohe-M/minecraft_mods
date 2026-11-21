@@ -43,7 +43,7 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 
 ## GitHub での共有
 
-リポジトリは非公開にする。友人に共有するときは GitHub Organization のリポジトリに `Read` 権限で招待する。友人からの不具合報告や要望は Issue で受け付ける。fork を許可した場合は、友人は自分の非公開 fork から PR を送れる。元のリポジトリへの push と PR のマージは管理者が行う。
+リポジトリは公開し、友人にはリポジトリの URL を案内する。不具合報告や要望は Issue で、変更の提案は fork からの PR で受け付ける。書き込み権限は管理者が持つ。`main` はルールセット `Protect main` で保護し、管理者が push と PR のマージを行う。
 
 ## 作業の流れ
 
