@@ -41,6 +41,10 @@ Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / x
 - 旧バージョンの修正は `mc/<MC>` でコミットし、main にも必要なら `git cherry-pick -x` する
 - main に直接コミットしてよい。大きな変更は作業ブランチ（`feat/<内容>` など）を切る
 
+## GitHub での共有
+
+リポジトリは非公開にする。友人に共有するときは GitHub Organization のリポジトリに `Read` 権限で招待する。友人からの不具合報告や要望は Issue で受け付ける。fork を許可した場合は、友人は自分の非公開 fork から PR を送れる。元のリポジトリへの push と PR のマージは管理者が行う。
+
 ## 作業の流れ
 
 エージェントが自律的に作業し、動くものを仕上げて push まで行う。途中でユーザーに確認しない。
