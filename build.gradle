@@ -51,6 +51,11 @@ subprojects {
 			localRuntime "maven.modrinth:sodium:${sodium_version}"
 			localRuntime "maven.modrinth:iris:${iris_version}"
 		}
+
+		// -PdistantHorizons で Distant Horizons も入れて起動する（併用の確認）。遠くの地形の生成と描画が重なるので、ふだんのテストには入れない
+		if (project.hasProperty("distantHorizons")) {
+			localRuntime "maven.modrinth:distanthorizons:${distanthorizons_version}"
+		}
 	}
 
 	loom {
@@ -77,6 +82,11 @@ subprojects {
 				enableGameTests = serverGametest
 				enableClientGameTests = clientGametest
 			}
+		}
+
+		// ゲームテストから Distant Horizons の API（com.seibel.distanthorizons.api）を参照する。jar には入らない
+		dependencies {
+			gametestCompileOnly "maven.modrinth:distanthorizons:${distanthorizons_version}"
 		}
 	}
 
@@ -117,6 +127,8 @@ subprojects {
 		usesService(minecraftClients)
 		timeout = clientTimeout
 		systemProperty "testkit.scenarios", scenarios
+		// Distant Horizons は java.awt.headless を false にするので、テストが失敗すると Fabric Loader のエラーの画面が開き、閉じるまで終わらない
+		systemProperty "fabric.noGui", "true"
 	}
 
 	jar {
