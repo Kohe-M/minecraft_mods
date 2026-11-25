@@ -17,7 +17,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import dev  # noqa: E402
 
-INNER = ["fullbright", "minimap", "sorter", "timber", "xray"]
+INNER = ["fullbright", "minimap", "sorter", "timber", "xray", "zoom"]
 
 
 class Workspace(unittest.TestCase):
@@ -27,26 +27,29 @@ class Workspace(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         (self.root / "gradle.properties").write_text("minecraft_version=26.3\njava_version=25\n", encoding="utf-8")
-        self.write_mod("jori", "1.9.2", client=True)
+        self.write_mod("jori", "1.9.2", client=True, dh=True)
         modules = ", ".join(f"'{m}'" for m in INNER)
         (self.root / "mods" / "jori" / "build.gradle").write_text(f"def modules = [{modules}]\n", encoding="utf-8")
-        self.write_mod("fullbright", "1.1.0", client=True, vanilla=True)
-        self.write_mod("minimap", "3.8.2", client=True, vanilla=True)
+        self.write_mod("fullbright", "1.1.0", client=True, vanilla=True, dh=True)
+        self.write_mod("minimap", "3.8.2", client=True, vanilla=True, dh=True)
         self.write_mod("sorter", "1.4.0", server=True, client=True)
         self.write_mod("timber", "1.1.0", server=True)
-        self.write_mod("xray", "1.3.0", client=True, vanilla=True)
+        self.write_mod("xray", "1.3.0", client=True, vanilla=True, dh=True)
+        self.write_mod("zoom", "1.1.1", client=True, dh=True)
         for name, value in {"ROOT": self.root, "MODS_DIR": self.root / "mods", "OUT": self.root / "build" / "dev",
                             "RUNS": self.root / "build" / "dev" / "runs"}.items():
             patcher = mock.patch.object(dev, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def write_mod(self, mod, version, server=False, client=False, vanilla=False):
+    def write_mod(self, mod, version, server=False, client=False, vanilla=False, dh=False):
         folder = self.root / "mods" / mod
         folder.mkdir(parents=True, exist_ok=True)
         lines = [f"mod_version={version}", f"server_gametest={str(server).lower()}", f"client_gametest={str(client).lower()}"]
         if vanilla:
             lines.append("vanilla_render_test=true")
+        if dh:
+            lines.append("distant_horizons_test=true")
         (folder / "gradle.properties").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -82,6 +85,11 @@ class PropertiesTest(Workspace):
     def test_vanilla_render_test_mark(self):
         self.assertTrue(dev.vanilla_render_test("xray"))
         self.assertFalse(dev.vanilla_render_test("sorter"))
+
+    def test_distant_horizons_test_mark(self):
+        self.assertTrue(dev.distant_horizons_test("xray"))
+        self.assertTrue(dev.distant_horizons_test("zoom"))
+        self.assertFalse(dev.distant_horizons_test("sorter"))
 
     def test_mod_version(self):
         self.assertEqual("3.8.2", dev.mod_version("minimap"))
@@ -181,21 +189,30 @@ class AttemptTest(unittest.TestCase):
 
 
 def make_args(**overrides):
-    values = dict(mods=[], all=False, base=None, scenario=[], no_sodium=False, no_vanilla=False, no_client=False, slots=3, timeout=10)
+    values = dict(mods=[], all=False, base=None, scenario=[], no_sodium=False, no_vanilla=False, no_dh=False,
+                  no_client=False, slots=3, timeout=10)
     values.update(overrides)
     return argparse.Namespace(**values)
 
 
 class PlanTestTest(Workspace):
-    def test_hooked_mods_also_run_in_vanilla(self):
+    def test_hooked_mods_also_run_in_vanilla_and_dh(self):
         plan = dev.plan_test(make_args(mods=["xray", "sorter", "timber"]))
         self.assertEqual(["sorter", "xray"], plan["client_mods"])
-        first, second = plan["passes"]
-        self.assertEqual(dev.SODIUM, first["render"])
+        first, second, third = plan["passes"]
+        self.assertEqual([dev.SODIUM, dev.VANILLA, dev.DH], [step["render"] for step in plan["passes"]])
         self.assertNotIn("-PnoSodium", first["options"])
         self.assertIn(":timber:build", first["tasks"])
         self.assertEqual((dev.VANILLA, ["xray"], [":xray:runClientGameTest"]), (second["render"], second["client_mods"], second["tasks"]))
         self.assertIn("-PnoSodium", second["options"])
+        self.assertEqual((dev.DH, ["xray"], [":xray:runClientGameTest"]), (third["render"], third["client_mods"], third["tasks"]))
+        self.assertIn("-PdistantHorizons", third["options"])
+        self.assertEqual("-Pscenarios=distant-horizons", third["options"][-1])
+
+    def test_dh_only_mod_runs_sodium_and_dh(self):
+        plan = dev.plan_test(make_args(mods=["zoom"]))
+        self.assertEqual([dev.SODIUM, dev.DH], [step["render"] for step in plan["passes"]])
+        self.assertEqual(["zoom"], plan["passes"][1]["client_mods"])
 
     def test_no_sodium_runs_only_vanilla(self):
         plan = dev.plan_test(make_args(mods=["xray"], no_sodium=True))
@@ -204,13 +221,41 @@ class PlanTestTest(Workspace):
 
     def test_no_vanilla_skips_the_second_pass(self):
         plan = dev.plan_test(make_args(mods=["xray"], no_vanilla=True))
-        self.assertEqual(1, len(plan["passes"]))
+        self.assertEqual([dev.SODIUM, dev.DH], [step["render"] for step in plan["passes"]])
+
+    def test_no_dh_skips_the_dh_pass(self):
+        plan = dev.plan_test(make_args(mods=["xray"], no_dh=True))
+        self.assertEqual([dev.SODIUM, dev.VANILLA], [step["render"] for step in plan["passes"]])
+
+    def test_dh_pass_only_when_the_scenario_includes_it(self):
+        without = dev.plan_test(make_args(mods=["xray"], scenario=["hud"]))
+        self.assertEqual([dev.SODIUM, dev.VANILLA], [step["render"] for step in without["passes"]])
+        with_dh = dev.plan_test(make_args(mods=["xray"], scenario=["hud", "distant-horizons"]))
+        self.assertEqual([dev.SODIUM, dev.VANILLA, dev.DH], [step["render"] for step in with_dh["passes"]])
+        self.assertEqual(["-PclientSlots=3", "-PclientTimeout=10", "-PdistantHorizons", "-Pscenarios=distant-horizons"],
+                         with_dh["passes"][2]["options"])
+
+    def test_plan_shows_the_dh_pass(self):
+        plan = dev.plan_test(make_args(mods=["xray", "zoom"]))
+        with mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            dev.print_plan(plan)
+        text = out.getvalue()
+        self.assertIn("Distant Horizons", text)
+        self.assertIn("-PdistantHorizons", text)
 
     def test_options_are_built_by_name(self):
         plan = dev.plan_test(make_args(mods=["minimap"], scenario=["map", "hud"], slots=2, timeout=7))
         self.assertEqual(["-PclientSlots=2", "-PclientTimeout=7", "-Pscenarios=map,hud"], plan["passes"][0]["options"])
         self.assertEqual(["-PclientSlots=1", "-PclientTimeout=7", "-PnoSodium", "-Pscenarios=map,hud"],
                          dev.gradle_options(plan, dev.VANILLA, slots=1))
+        self.assertEqual(["-PclientSlots=1", "-PclientTimeout=7", "-PdistantHorizons", "-Pscenarios=distant-horizons"],
+                         dev.gradle_options(plan, dev.DH, slots=1))
+
+    def test_shot_labels(self):
+        self.assertEqual("", dev.pass_label(dev.SODIUM))
+        self.assertEqual("-vanilla", dev.pass_label(dev.VANILLA))
+        self.assertEqual("-dh", dev.pass_label(dev.DH))
+        self.assertEqual("xray（Distant Horizons）", dev.shot_title("xray-dh"))
 
 
 def fake_pass(render, lines, clients):
@@ -223,15 +268,32 @@ class ModResultTest(unittest.TestCase):
         first = fake_pass(dev.SODIUM, ["> Task :xray:build", "> Task :xray:runClientGameTest"], {"xray": {"status": "OK", "detail": []}})
         second = fake_pass(dev.VANILLA, [], {"xray": {"status": "NG", "detail": ["boom"], "seconds": 30, "scenarios": {}}})
         result = dev.mod_result("xray", [first, second])
-        self.assertEqual(("OK", "OK", "NG"), (result["build"], result["client"], result["vanilla"]))
+        self.assertEqual(("OK", "OK", "NG", "-"), (result["build"], result["client"], result["vanilla"], result["dh"]))
         self.assertFalse(result["ok"])
         self.assertEqual(["（バニラ描画）boom"], result["detail"])
+
+    def test_dh_failure_fails_the_mod(self):
+        first = fake_pass(dev.SODIUM, ["> Task :xray:build", "> Task :xray:runClientGameTest"], {"xray": {"status": "OK", "detail": []}})
+        second = fake_pass(dev.VANILLA, [], {"xray": {"status": "OK", "detail": []}})
+        third = fake_pass(dev.DH, [], {"xray": {"status": "NG", "detail": ["lod"], "seconds": 20, "scenarios": {}}})
+        result = dev.mod_result("xray", [first, second, third])
+        self.assertEqual(("OK", "OK", "OK", "NG"), (result["build"], result["client"], result["vanilla"], result["dh"]))
+        self.assertFalse(result["ok"])
+        self.assertEqual(["（Distant Horizons）lod"], result["detail"])
+
+    def test_dh_only_mod_does_not_fill_vanilla(self):
+        first = fake_pass(dev.SODIUM, ["> Task :zoom:build", "> Task :zoom:runClientGameTest"], {"zoom": {"status": "OK", "detail": []}})
+        second = fake_pass(dev.DH, [], {"zoom": {"status": "OK", "detail": [], "seconds": 20, "scenarios": {}}})
+        result = dev.mod_result("zoom", [first, second])
+        self.assertEqual(("-", "OK"), (result["vanilla"], result["dh"]))
+        self.assertTrue(result["ok"])
+        self.assertEqual({"distant-horizons": {"seconds": 20, "scenarios": {}}}, result["times"])
 
     def test_build_failure(self):
         first = fake_pass(dev.SODIUM, ["> Task :timber:runGameTest FAILED"], {})
         result = dev.mod_result("timber", [first])
         self.assertEqual("NG runGameTest", result["build"])
-        self.assertEqual(("-", "-"), (result["client"], result["vanilla"]))
+        self.assertEqual(("-", "-", "-"), (result["client"], result["vanilla"], result["dh"]))
         self.assertFalse(result["ok"])
 
     def test_not_run(self):
@@ -275,9 +337,9 @@ class PushReleaseTest(unittest.TestCase):
 
 
 class ReleaseCheckTest(Workspace):
-    def record(self, mod, key, client="OK", vanilla="-", filtered=False, render=dev.SODIUM, ok=True):
+    def record(self, mod, key, client="OK", vanilla="-", dh="-", filtered=False, render=dev.SODIUM, ok=True):
         return {"id": f"{mod}-{key}", "content": {"keys": {mod: key}}, "filtered": filtered, "plan": {"render": render},
-                "results": [{"mod": mod, "ok": ok, "client": client, "vanilla": vanilla}]}
+                "results": [{"mod": mod, "ok": ok, "client": client, "vanilla": vanilla, "dh": dh}]}
 
     def test_matching_record(self):
         record = self.record("sorter", "abc")
@@ -297,7 +359,15 @@ class ReleaseCheckTest(Workspace):
 
     def test_hooked_mod_needs_vanilla(self):
         self.assertIsNone(dev.passing_record("xray", "k", [self.record("xray", "k")]))
-        self.assertIsNotNone(dev.passing_record("xray", "k", [self.record("xray", "k", vanilla="OK")]))
+        self.assertIsNone(dev.passing_record("xray", "k", [self.record("xray", "k", vanilla="OK")]))
+        self.assertIsNotNone(dev.passing_record("xray", "k", [self.record("xray", "k", vanilla="OK", dh="OK")]))
+
+    def test_dh_mod_needs_the_dh_pass(self):
+        self.assertIsNone(dev.passing_record("zoom", "k", [self.record("zoom", "k")]))
+        record = self.record("zoom", "k", dh="OK")
+        del record["results"][0]["dh"]
+        self.assertIsNone(dev.passing_record("zoom", "k", [record]))
+        self.assertIsNotNone(dev.passing_record("zoom", "k", [self.record("zoom", "k", dh="OK")]))
 
     def test_server_only_mod_needs_no_client(self):
         self.assertIsNotNone(dev.passing_record("timber", "k", [self.record("timber", "k", client="-")]))
@@ -361,7 +431,7 @@ class CommandReleaseTest(Workspace):
     def write_record(self, mod, key, **result):
         dev.RUNS.mkdir(parents=True, exist_ok=True)
         record = {"id": f"20261112-00000{len(list(dev.RUNS.iterdir()))}", "content": {"keys": {mod: key}}, "filtered": False,
-                  "plan": {"render": dev.SODIUM}, "results": [dict({"mod": mod, "ok": True, "client": "OK", "vanilla": "OK"}, **result)]}
+                  "plan": {"render": dev.SODIUM}, "results": [dict({"mod": mod, "ok": True, "client": "OK", "vanilla": "OK", "dh": "OK"}, **result)]}
         (dev.RUNS / f"{record['id']}.json").write_text(json.dumps(record), encoding="utf-8")
 
     def test_stops_before_bumping_without_records(self):

@@ -37,12 +37,21 @@ SHARED_PATHS = ("build.gradle", "settings.gradle", "gradle.properties", "gradle/
 TEST_SHARED_PATHS = ("testkit/",)
 # port は版を変えずに、いまの MC のタグを付ける（MC の移植）
 LEVELS = ("port", "patch", "minor", "major")
-# 描画の構成。ふだんは Sodium + Iris で、描画にフックする mod はバニラ描画（-PnoSodium）でも確かめる
+# 描画の構成。ふだんは Sodium + Iris で、描画にフックする mod はバニラ描画（-PnoSodium）でも確かめ、
+# Distant Horizons と併用する mod は DH 入り（-PdistantHorizons）でも確かめる
 SODIUM = "sodium+iris"
 VANILLA = "vanilla"
-RENDER_NAMES = {SODIUM: "Sodium + Iris", VANILLA: "バニラ"}
-# バニラ描画で 2 回目に走らせたときのスクリーンショットの置き場所と一覧の画像は <mod>-vanilla
+DH = "distant-horizons"
+RENDER_NAMES = {SODIUM: "Sodium + Iris", VANILLA: "バニラ", DH: "Distant Horizons"}
+# 2 回目以降に走らせたときのスクリーンショットの置き場所と一覧の画像は <mod>-vanilla / <mod>-dh
 VANILLA_LABEL = "-vanilla"
+DH_LABEL = "-dh"
+RENDER_LABELS = {VANILLA: VANILLA_LABEL, DH: DH_LABEL}
+RENDER_TITLES = {VANILLA_LABEL: "バニラ描画", DH_LABEL: "Distant Horizons"}
+RENDER_RESULT_KEYS = {VANILLA: "vanilla", DH: "dh"}
+RENDER_PREFIXES = {SODIUM: "", VANILLA: "（バニラ描画）", DH: "（Distant Horizons）"}
+# DH の回は、遠くの地形の生成と描画が重なってほかのテストを揺らすので、このシナリオだけを走らせる
+DH_SCENARIO = "distant-horizons"
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -89,6 +98,11 @@ def has_client_tests(mod):
 def vanilla_render_test(mod):
     """描画にフックする mod か（mods/<mod>/gradle.properties の vanilla_render_test）。test は Sodium の後にバニラ描画でもクライアントのテストを走らせる"""
     return mod_property(mod, "vanilla_render_test") == "true"
+
+
+def distant_horizons_test(mod):
+    """Distant Horizons と併用する mod か（mods/<mod>/gradle.properties の distant_horizons_test）。test は最後に DH 入りでシナリオ distant-horizons を走らせる"""
+    return mod_property(mod, "distant_horizons_test") == "true"
 
 
 def mod_version(mod, ref=None):
@@ -441,20 +455,40 @@ def make_sheets(shots):
     return sheets
 
 
+def pass_label(render):
+    """2 回目以降のスクリーンショットの置き場所に付ける名前"""
+    return RENDER_LABELS.get(render, "")
+
+
 def shot_title(label):
-    return f"{label[:-len(VANILLA_LABEL)]}（バニラ描画）" if label.endswith(VANILLA_LABEL) else label
+    for suffix, title in RENDER_TITLES.items():
+        if label.endswith(suffix):
+            return f"{label[:-len(suffix)]}（{title}）"
+    return label
 
 
-def write_report(results, shots, title, errors=(), render=SODIUM):
+def write_report(results, shots, title, errors=(), renders=(SODIUM,)):
+    if isinstance(renders, str):
+        renders = (renders,)
+    extras = [render for render in (VANILLA, DH) if render in renders[1:]]
+    labels = [pass_label(render) for render in extras]
+    headers = [f"クライアント（{RENDER_NAMES[renders[0]]}）"]
+    if VANILLA in extras:
+        headers.append("クライアント（バニラ描画で 2 回目）")
+    if DH in extras:
+        headers.append("クライアント（Distant Horizons）")
     rows = []
     for result in results:
         mod = result["mod"]
         status = "OK" if result["ok"] else "NG"
         detail = "<br>".join(html.escape(line) for line in result["detail"])
-        rows.append(f"<tr class='{status}'><td>{mod}</td><td>{html.escape(result['build'])}</td><td>{html.escape(result['client'])}</td>"
-                    f"<td>{html.escape(result['vanilla'])}</td><td>{len(shots.get(mod, []))} / {len(shots.get(mod + VANILLA_LABEL, []))}</td>"
-                    f"<td><code>{detail}</code></td></tr>")
-    table = (f"<table><tr><th>mod</th><th>ビルド</th><th>クライアント（{RENDER_NAMES[render]}）</th><th>クライアント（バニラ描画で 2 回目）</th>"
+        statuses = [result["client"]] + [result.get(RENDER_RESULT_KEYS[render], "-") for render in extras]
+        counts = " / ".join(str(len(shots.get(mod + label, []))) for label in [""] + labels)
+        cells = "".join(f"<td>{html.escape(status)}</td>" for status in statuses)
+        rows.append(f"<tr class='{status}'><td>{mod}</td><td>{html.escape(result['build'])}</td>{cells}"
+                    f"<td>{counts}</td><td><code>{detail}</code></td></tr>")
+    head = "".join(f"<th>{header}</th>" for header in headers)
+    table = (f"<table><tr><th>mod</th><th>ビルド</th>{head}"
              f"<th>画面</th><th>失敗の中身</th></tr>{''.join(rows)}</table>"
              if results else "")
     gradle_errors = "".join(f"<pre class='NG'>{html.escape(chr(10).join(lines))}</pre>" for lines in errors)
@@ -515,20 +549,32 @@ def plan_test(args):
         # tools/ のテスト（tools/test_dev.py）。tools/ が変わったときと --all
         "tools": tools,
     }
-    # 1 回目はビルドとすべてのテスト。描画にフックする mod は、2 回目にバニラ描画でクライアントのテストだけを走らせる
+    # 1 回目はビルドとすべてのテスト。描画にフックする mod はバニラ描画で、
+    # DH と併用する mod は DH 入り（シナリオ distant-horizons だけ）で、クライアントのテストをもう一度走らせる
     plan["passes"] = [{
         "render": render,
         "client_mods": client_mods,
         "tasks": [f":{m}:build" for m in mods] + [f":{m}:runClientGameTest" for m in client_mods],
         "options": gradle_options(plan, render),
     }]
-    vanilla_mods = [] if render == VANILLA or args.no_vanilla else [m for m in client_mods if vanilla_render_test(m)]
-    if vanilla_mods:
+    vanilla = [] if render == VANILLA or args.no_vanilla else [m for m in client_mods if vanilla_render_test(m)]
+    if vanilla:
         plan["passes"].append({
             "render": VANILLA,
-            "client_mods": vanilla_mods,
-            "tasks": [f":{m}:runClientGameTest" for m in vanilla_mods],
+            "client_mods": vanilla,
+            "tasks": [f":{m}:runClientGameTest" for m in vanilla],
             "options": gradle_options(plan, VANILLA),
+        })
+    # DH の回は、シナリオで絞ったときは distant-horizons を指定したときだけ走らせる
+    dh = []
+    if render != VANILLA and not args.no_dh and (not plan["scenarios"] or DH_SCENARIO in plan["scenarios"]):
+        dh = [m for m in client_mods if distant_horizons_test(m)]
+    if dh:
+        plan["passes"].append({
+            "render": DH,
+            "client_mods": dh,
+            "tasks": [f":{m}:runClientGameTest" for m in dh],
+            "options": gradle_options(plan, DH),
         })
     return plan
 
@@ -538,14 +584,22 @@ def gradle_options(plan, render, slots=None):
     options = [f"-PclientSlots={slots or plan['slots']}", f"-PclientTimeout={plan['timeout']}"]
     if render == VANILLA:
         options.append("-PnoSodium")
-    if plan["scenarios"]:
+    if render == DH:
+        options.append("-PdistantHorizons")
+        options.append(f"-Pscenarios={DH_SCENARIO}")
+    elif plan["scenarios"]:
         options.append(f"-Pscenarios={','.join(plan['scenarios'])}")
     return options
 
 
 def vanilla_mods(plan):
     """2 回目にバニラ描画でクライアントのテストを走らせる mod"""
-    return [m for step in plan["passes"][1:] for m in step["client_mods"]]
+    return [m for step in plan["passes"][1:] if step["render"] == VANILLA for m in step["client_mods"]]
+
+
+def dh_mods(plan):
+    """最後に Distant Horizons 入りでクライアントのテストを走らせる mod"""
+    return [m for step in plan["passes"] for m in step["client_mods"] if step["render"] == DH]
 
 
 def print_plan(plan, command=True):
@@ -556,14 +610,17 @@ def print_plan(plan, command=True):
     if not plan["mods"]:
         print("変わった mod はない。全部なら --all、mod を指定するなら test <mod>")
         return
+    vanilla, dh = vanilla_mods(plan), dh_mods(plan)
     width = max(len(m) for m in plan["mods"])
     for mod in plan["mods"]:
         client = "ビルドのみ"
         if mod in plan["client_mods"]:
-            client = "クライアントも（バニラ描画でも）" if mod in vanilla_mods(plan) else "クライアントも"
+            extra = [name for name, mods in (("バニラ描画", vanilla), ("Distant Horizons ", dh)) if mod in mods]
+            client = f"クライアントも（{'・'.join(extra)}でも）" if extra else "クライアントも"
         print(f"  {mod:<{width}}  {client:<8} {'、'.join(plan['reasons'][mod])}")
     print(f"描画: {RENDER_NAMES[plan['render']]}"
-          + ("、描画にフックする mod はバニラでも" if vanilla_mods(plan) else "")
+          + ("、描画にフックする mod はバニラでも" if vanilla else "")
+          + (f"、Distant Horizons と併用する mod は DH 入りで {DH_SCENARIO} だけでも" if dh else "")
           + (f"  シナリオ: {', '.join(plan['scenarios'])}" if plan["scenarios"] else ""))
     if command:
         for step in plan["passes"]:
@@ -645,19 +702,23 @@ def mod_result(mod, passes):
     else:
         build = "走らず"
 
-    statuses = []
+    client = "-"
+    statuses = {"vanilla": "-", "dh": "-"}
     times = {}
     for index, run in enumerate(passes):
-        client = run["clients"].get(mod)
-        statuses.append(client["status"] if client else "-")
-        if client:
-            prefix = "" if index == 0 else f"（{RENDER_NAMES[run['render']]}描画）"
-            detail += [prefix + line for line in client["detail"]]
-            if "seconds" in client:
-                times[run["render"]] = {"seconds": client["seconds"], "scenarios": client["scenarios"]}
-    client, vanilla = statuses[0], (statuses[1] if len(statuses) > 1 else "-")
-    ok = build == "OK" and all(s == "-" or s.startswith("OK") for s in (client, vanilla))
-    return {"mod": mod, "build": build, "client": client, "vanilla": vanilla, "ok": ok, "detail": detail, "times": times}
+        result = run["clients"].get(mod)
+        if not result:
+            continue
+        if index == 0:
+            client = result["status"]
+        else:
+            statuses[RENDER_RESULT_KEYS[run["render"]]] = result["status"]
+        detail += [RENDER_PREFIXES[run["render"]] + line for line in result["detail"]]
+        if "seconds" in result:
+            times[run["render"]] = {"seconds": result["seconds"], "scenarios": result["scenarios"]}
+    vanilla, dh = statuses["vanilla"], statuses["dh"]
+    ok = build == "OK" and all(s == "-" or s.startswith("OK") for s in (client, vanilla, dh))
+    return {"mod": mod, "build": build, "client": client, "vanilla": vanilla, "dh": dh, "ok": ok, "detail": detail, "times": times}
 
 
 def describe_client(status, times):
@@ -725,7 +786,7 @@ def command_test(args):
         "uncommitted": [line[3:] for line in git("status", "--porcelain").splitlines()],
         # 走らせ始めたときの中身。release はこれと今の中身を比べる（content_keys）
         "content": {"tree": tree, "keys": content_keys(plan["mods"], tree)},
-        # シナリオで絞ったか、クライアントのテストを飛ばしたか。描画の構成は renders と、mod ごとの結果の client・vanilla
+        # シナリオで絞ったか、クライアントのテストを飛ばしたか。描画の構成は renders と、mod ごとの結果の client・vanilla・dh
         "filtered": bool(plan["scenarios"]) or args.no_client,
         "renders": [step["render"] for step in plan["passes"]],
         "plan": plan,
@@ -736,11 +797,12 @@ def command_test(args):
     passes = []
     for index, step in enumerate(plan["passes"]):
         if index:
-            print(f"{RENDER_NAMES[step['render']]}描画でクライアントのテストを走らせる: {', '.join(step['client_mods'])}", flush=True)
+            name = RENDER_NAMES[step["render"]]
+            print(f"{name}{' ' if step['render'] == DH else ''}でクライアントのテストを走らせる: {', '.join(step['client_mods'])}", flush=True)
             # 前の構成の画面が残っていると、走らなかったときに混ざる
             for mod in step["client_mods"]:
                 shutil.rmtree(screenshot_folder(mod), ignore_errors=True)
-        passes.append(run_pass(plan, step, log, args.no_retry, VANILLA_LABEL if index else ""))
+        passes.append(run_pass(plan, step, log, args.no_retry, pass_label(step["render"]) if index else ""))
     attempts = [a for run in passes for a in run["attempts"]]
 
     results = [mod_result(mod, passes) for mod in plan["mods"]]
@@ -751,7 +813,8 @@ def command_test(args):
 
     shots = {label: files for run in passes for label, files in run["shots"].items()}
     sheets = make_sheets(shots)
-    report = write_report(results, shots, "テストの結果", errors + ([problems] if problems else []), plan["render"])
+    report = write_report(results, shots, "テストの結果", errors + ([problems] if problems else []),
+                          [step["render"] for step in plan["passes"]])
     ok = not errors and not problems and all(r["ok"] for r in results) and (tools is None or tools["ok"])
 
     print()
@@ -772,9 +835,13 @@ def command_test(args):
         line = f"{mark} {mod:<{width}}  ビルド {result['build']:<4}  クライアント {describe_client(result['client'], result['times'].get(plan['render']))}"
         if result["vanilla"] != "-":
             line += f"  バニラ描画 {describe_client(result['vanilla'], result['times'].get(VANILLA))}"
+        if result["dh"] != "-":
+            line += f"  Distant Horizons {describe_client(result['dh'], result['times'].get(DH))}"
         line += f"  画面 {len(shots.get(mod, []))}"
         if mod + VANILLA_LABEL in shots:
             line += f" + {len(shots[mod + VANILLA_LABEL])}"
+        if mod + DH_LABEL in shots:
+            line += f" + {len(shots[mod + DH_LABEL])}"
         print(line)
         for detail in result["detail"]:
             print(f"    {detail}")
@@ -786,7 +853,9 @@ def command_test(args):
         "errors": errors,
         "source_problems": problems,
         "tools": tools,
-        "results": [dict(r, screenshots=len(shots.get(r["mod"], [])), vanilla_screenshots=len(shots.get(r["mod"] + VANILLA_LABEL, [])))
+        "results": [dict(r, screenshots=len(shots.get(r["mod"], [])),
+                         vanilla_screenshots=len(shots.get(r["mod"] + VANILLA_LABEL, [])),
+                         dh_screenshots=len(shots.get(r["mod"] + DH_LABEL, [])))
                     for r in results],
         "artifacts": {
             "log": rel(log),
@@ -1161,7 +1230,8 @@ def test_records():
 
 def passing_record(mod, key, records):
     """mod を、中身が key のときに、絞らずに通した test の記録。なければ None。
-    クライアントのテストがある mod は Sodium + Iris で、描画にフックする mod はバニラ描画でも通っていること"""
+    クライアントのテストがある mod は Sodium + Iris で、描画にフックする mod はバニラ描画でも、
+    Distant Horizons と併用する mod は DH の回でも通っていること。DH の回がない記録は認めない"""
     for record in records:
         if record.get("content", {}).get("keys", {}).get(mod) != key or record.get("filtered", True):
             continue
@@ -1172,6 +1242,8 @@ def passing_record(mod, key, records):
             if record.get("plan", {}).get("render") != SODIUM or not result.get("client", "").startswith("OK"):
                 continue
             if vanilla_render_test(mod) and not result.get("vanilla", "").startswith("OK"):
+                continue
+            if distant_horizons_test(mod) and not result.get("dh", "").startswith("OK"):
                 continue
         return record
     return None
@@ -1277,6 +1349,7 @@ def main():
     test.add_argument("--scenario", action="append", default=[], help="クライアントのゲームテストのシナリオを絞る（何度でも。mod の文書を見る）")
     test.add_argument("--no-sodium", action="store_true", help="Sodium / Iris を入れずにバニラ描画だけで走らせる")
     test.add_argument("--no-vanilla", action="store_true", help="描画にフックする mod でも、バニラ描画の 2 回目を走らせない")
+    test.add_argument("--no-dh", action="store_true", help="Distant Horizons と併用する mod でも、DH 入りの回を走らせない")
     test.add_argument("--no-client", action="store_true", help="クライアントのゲームテストを走らせない")
     test.add_argument("--no-retry", action="store_true", help="時間切れのクライアントを走らせ直さない")
     test.add_argument("--slots", type=int, default=3, help="同時に起動するクライアントの数（既定 3）")

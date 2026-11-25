@@ -25,6 +25,7 @@ python tools/dev.py test                     # 上流のブランチから変わ
 python tools/dev.py test minimap --scenario map   # クライアントのゲームテストをシナリオで絞る
 python tools/dev.py test --all --no-sodium   # 全 mod をバニラ描画だけで
 python tools/dev.py test xray --no-vanilla   # 描画にフックする mod でも、バニラ描画の 2 回目を飛ばす
+python tools/dev.py test xray --no-dh        # Distant Horizons と併用する mod でも、DH 入りの回を飛ばす
 ```
 
 - 対象は、比べる先からの差分・コミットしていない変更・追跡していないファイルで決める
@@ -44,15 +45,19 @@ python tools/dev.py test xray --no-vanilla   # 描画にフックする mod で�
   - `--no-sodium` ならバニラ描画だけ（2 回目はない）。`--no-vanilla` で 2 回目を飛ばす（修正の途中に。コミットの前は飛ばさない）
   - 2 回目は Gradle を別に走らせる（`-PnoSodium` はビルド全体の設定なので、1 回の Gradle で両方は走らせられない）。時間切れの走らせ直しは回ごとに行う
   - ゲームのログとスクリーンショットは 2 回目で上書きされるので、1 回目の失敗の中身とスクリーンショットは 1 回目が終わったときに読んで写しておく。2 回目の前には、ゲームの実行フォルダのスクリーンショットを消す（2 回目が走らなかったときに 1 回目のものが混ざらないように）
+- Distant Horizons と併用する mod（`distant_horizons_test=true`。いまは fullbright・jori・minimap・xray・zoom）は、バニラ描画の後に DH 入り（`-PdistantHorizons`）でもう一度クライアントのテストを走らせる。順番は Sodium + Iris → バニラ描画 → DH。3 つとも通ってはじめて OK
+  - DH の回はシナリオ `distant-horizons` だけを走らせる（`-Pscenarios=distant-horizons`）。DH は遠くの地形を生成し続けるので、生成の速さを測る minimap のテストなど、ほかのシナリオの時間や画素が揺れるため。DH と併用する mod が崩れていないかは、その mod の `distant-horizons` シナリオで確かめる
+  - `--no-dh` で DH の回を飛ばす。`--no-sodium` と `--no-client` のときは走らせない。`--scenario` で絞ったときは、`distant-horizons` を指定したときだけ走らせる（シナリオを絞らずに走らせるコミットの前は、DH の回も走る）
+  - DH の回も Gradle を別に走らせる（`-PdistantHorizons` もビルド全体の設定）。スクリーンショットとゲームのログはバニラ描画の回と同じく上書きされるので、回ごとに写して消す
 
 ### 結果の見方
 
 | ファイル | 中身 |
 |---|---|
-| 画面の最後 | mod ごとに 1 行。2 回目にバニラ描画で走らせた mod は「バニラ描画」の結果も同じ行に出す。クライアントの結果の後ろに、かかった時間（`OK（372 秒: hud 41・map 95・…）`）。失敗なら例外とこのリポジトリのスタックの行（2 回目の分は頭に「（バニラ描画）」） |
-| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成（`plan.passes`）・Gradle の各回の終了コードとタスクの結果と描画の構成（`attempts`）・mod ごとの結果（`client` は 1 回目、`vanilla` はバニラ描画の 2 回目、`times` は構成ごとのかかった時間）・成果物の場所。直近の 30 回を残す |
+| 画面の最後 | mod ごとに 1 行。2 回目以降にバニラ描画・Distant Horizons で走らせた mod は、その結果も同じ行に出す。クライアントの結果の後ろに、かかった時間（`OK（372 秒: hud 41・map 95・…）`）。失敗なら例外とこのリポジトリのスタックの行（2 回目以降の分は頭に「（バニラ描画）」「（Distant Horizons）」） |
+| `build/dev/last-run.json`（`build/dev/runs/<日時>.json`） | 実行の記録。コミット・コミットしていない変更・選んだわけ・描画の構成（`plan.passes`）・Gradle の各回の終了コードとタスクの結果と描画の構成（`attempts`）・mod ごとの結果（`client` は 1 回目、`vanilla` はバニラ描画の 2 回目、`dh` は Distant Horizons 入りの回、`times` は構成ごとのかかった時間）・成果物の場所。直近の 30 回を残す |
 | `build/dev/report.html` | 結果の表とすべてのスクリーンショット（人が見る用） |
-| `build/dev/sheets/<mod>-<n>.png` | スクリーンショットを 20 枚ずつ並べた画像。見た目はまずこれを Read する。バニラ描画の 2 回目の分は `<mod>-vanilla-<n>.png`（写しは `build/dev/screenshots/<mod>-vanilla/`） |
+| `build/dev/sheets/<mod>-<n>.png` | スクリーンショットを 20 枚ずつ並べた画像。見た目はまずこれを Read する。バニラ描画の回の分は `<mod>-vanilla-<n>.png`、Distant Horizons 入りの回の分は `<mod>-dh-<n>.png`（写しは `build/dev/screenshots/<mod>-vanilla/`・`<mod>-dh/`） |
 | `build/dev/gradle.log` | Gradle の出力すべて（各回の終わりに終了コード） |
 | `mods/<mod>/build/run/clientGameTest/logs/latest.log` | クライアントのゲームテストのゲームのログ |
 | `mods/<mod>/build/run/gameTest/logs/latest.log` | サーバーのゲームテストのゲームのログ |
@@ -109,7 +114,7 @@ python tools/dev.py release fullbright port minimap port # MC の移植。版は
   - docs・README・AGENTS.md・`tools/` は含めない。jar にもゲームテストにも入らず、変わってもテストの結果は変わらないので、test の後に docs だけのコミットが入っても通す。jar とゲームテストに入るものが 1 つでも変われば値が変わり、test を走らせ直す
 - release は、版を書き換える前の中身で mod ごとの値を作り、同じ値で次の条件を満たす記録を新しい順に探す
   - シナリオで絞っていない（`--scenario` なし）、クライアントのテストを飛ばしていない（`--no-client` なし）。記録の `filtered` が false
-  - その mod の結果が OK。クライアントのテストがある mod は Sodium + Iris で通っている（`--no-sodium` だけの記録は使わない）。描画にフックする mod は、バニラ描画の 2 回目も通っている
+  - その mod の結果が OK。クライアントのテストがある mod は Sodium + Iris で通っている（`--no-sodium` だけの記録は使わない）。描画にフックする mod は、バニラ描画の 2 回目も通っている。Distant Horizons と併用する mod は、DH の回も通っている（`dh` が OK。DH の回がない記録は使わない）
 - 中の mod だけを `--no-bundle` でリリースした後に jori を別にリリースすると、jori の値（中の mod の `gradle.properties`）が変わっているので、jori の test を走らせ直す。ふつうは jori も一緒に上げるので、走らせ直さなくてよい
 - 記録は直近の 30 回しか残らないので、test の後に何度も test を走らせると探せなくなることがある
 
@@ -132,7 +137,7 @@ python -m unittest discover -s tools       # tools/test_dev.py。数秒で終わ
 ```
 
 - 標準の unittest で、git や Gradle は動かさない。`mods/` と記録は一時フォルダに作り、`dev.py` の場所（`ROOT`・`MODS_DIR`・`OUT`・`RUNS`）と git を呼ぶ関数を差し替える
-- 確かめること: 変わったファイルから選ぶ mod（`select_mods`・`tools_changed`）、`gradle.properties` の読み方（`client_gametest`・`vanilla_render_test`）、版の上げ方（`bump`）、jori の連動（`plan_release`）、Gradle のログの読み方（`Attempt`。失敗・時間切れ・タスクの外の失敗）、描画の構成ごとの計画と結果（`plan_test`・`mod_result`）、名前で組み立てるオプション（`gradle_options`）、かかった時間（`client_timings`）、テストの記録の探し方（`content_keys`・`passing_record`）と release が版を書き換える前に止まること、jar の mixins.json の検査
+- 確かめること: 変わったファイルから選ぶ mod（`select_mods`・`tools_changed`）、`gradle.properties` の読み方（`client_gametest`・`vanilla_render_test`・`distant_horizons_test`）、版の上げ方（`bump`）、jori の連動（`plan_release`）、Gradle のログの読み方（`Attempt`。失敗・時間切れ・タスクの外の失敗）、描画の構成ごとの計画と結果（`plan_test`・`mod_result`。バニラ描画と Distant Horizons の回、`--no-dh`・`--no-sodium`・`--scenario`）、名前で組み立てるオプション（`gradle_options`）、かかった時間（`client_timings`）、テストの記録の探し方（`content_keys`・`passing_record`。DH の回の有無）と release が版を書き換える前に止まること、jar の mixins.json の検査
 - dev.py の判定を変えたら、ここにもテストを足す。ゲームテストと違って Minecraft を起動しないので、判定の細かい場合分けはこちらで確かめる
 
 ## 文字コードと改行
