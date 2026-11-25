@@ -1,4 +1,7 @@
 dependencies {
 	// Sodium のチャンク構築にもフックするのでコンパイル時だけ参照する
 	compileOnly "maven.modrinth:sodium:${sodium_version}"
+
+	// 透視中は Distant Horizons の LOD も描かせないので、コンパイル時だけ API を参照する
+	compileOnly "maven.modrinth:distanthorizons:${distanthorizons_version}"
 }

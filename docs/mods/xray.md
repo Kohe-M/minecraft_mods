@@ -34,6 +34,12 @@
   - 遠くのエンティティがクライアントに届くかはサーバーの追跡距離で決まる（描画距離より遠いものは届かない）
 - 切り替えたら全チャンクを描き直す（`Minecraft.levelExtractor.allChanged()`、F3+A と同じ）。Sodium もこれで作り直す
 - オンの状態とモードはチャンク構築のスレッドから読まれるので `volatile`
+- Distant Horizons（DH）が入っているときは、透視中に DH の LOD も描かせない（`DistantHorizonsLods`）
+  - DH の `DhApi.overrides` に、何とも交差しない視錐台（`IDhApiCullingFrustum` と、シェーダーパックの影用の `IDhApiShadowCullingFrustum`）を priority 1000 で bind する。DH の描画パスは走ったままだが、LOD が 1 つも選ばれなくなるので、LOD の色と深度は毎フレーム消え、フェードも何もしない
+  - `renderingEnabled` を false にする方法は使わない。シェーダーパック使用中に Iris がパックを丸ごと読み直し、切り替えのたびに止まるため。`DhApiBeforeRenderEvent` の cancel も使わない。前のフレームの LOD の色が残り、フェードでバニラの画素に混ざるため
+  - 設定で視錐台カリングが切られていると視錐台が使われないので、隠す間だけ `disableFrustumCulling` / `disableShadowFrustumCulling` を `setValue(false, "X-Ray")` で上書きし、戻すときに `clearValue()` する。DH の初期化前は `DhApi.Delayed.configs` が null なので確かめる。途中で失敗しても LOD が隠れたままにならないよう、隠すときは設定 → bind、戻すときは unbind → 設定の順にする
+  - DH の更新で API が変わっていても xray を落とさない。`LinkageError` を捕まえて 1 度だけ warn を出し、以後は何もしない（LOD は見えたままになる）
+  - DH のクラスを参照するのは `DistantHorizonsLods` だけで、`FabricLoader.isModLoaded("distanthorizons")` のときだけ呼ぶ。`setActive` はワールドに入る前にも呼ばれるので、level が null でも状態を合わせる
 
 ## ゲームテスト
 
@@ -49,3 +55,8 @@
   - 鉱石のモードでは明るさが最大にならないことも確かめる（`EntityRenderDispatcher.getPackedLightCoords`）
   - 48 ブロック先に鶏を浮かべ、それを見ている間の `EntityRenderDispatcher.shouldRender`（視錐台は `Camera.getCullFrustum()`）が、エンティティとチェストのモードだけ true になることを確かめる
   - モブは `NoAi`・無敵で置き、向き（`yBodyRot` まで）を南にそろえて、プレイヤーから横腹が見えるようにする
+- `distant-horizons` シナリオ（`DistantHorizonsTest`）は、DH が入っていないときは何もせず戻る。スーパーフラットの地面から 60 ブロックほど上に足場を作り、72 ブロック先に石の壁と、その裏にエメラルド鉱石を浮かべる
+  - オフでは `Lods.waitForRendering` で LOD が描かれるのを待ち、地平線のすぐ下の LOD の地面が緑であることを確かめる
+  - オンにすると `Lods.assertNotRendering` で LOD が 1 つも描かれないことと、同じ範囲から緑が消えることを確かめる。壁の裏の鉱石が見えることも、中央の平均の明るさが上がる（石は暗く、透視中の鉱石は最大の明るさ）ことで確かめる。72 ブロック先は霧で色が薄れるので、緑の割合ではなく明るさで見る
+  - オンのまま `setActive(false)` で LOD が戻り、`setActive(true)` でまた消えることも確かめる
+  - 画素は HUD を隠して撮る。地面から 60 ブロック上に立つのは、地面のすぐ上だと LOD が地平線の数画素にしか写らないため。足場はクリエイティブの飛行が効かないときも落ちないようにするため

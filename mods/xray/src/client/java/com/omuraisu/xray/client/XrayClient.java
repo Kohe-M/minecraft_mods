@@ -37,6 +37,8 @@ public class XrayClient implements ClientModInitializer {
 	private static volatile boolean active = true;
 
 	private static int heldTicks;
+	// Distant Horizons の API が合わず、LOD を隠せない
+	private static boolean lodsFailed;
 
 	public static KeyMapping toggle;
 
@@ -104,6 +106,8 @@ public class XrayClient implements ClientModInitializer {
 		if (enabled && client.level != null) {
 			client.levelExtractor.allChanged();
 		}
+		// ワールドに入る前でも呼ばれるので、level の有無によらず DH の状態を合わせる
+		updateLods();
 	}
 
 	public static boolean isEnabled() {
@@ -133,10 +137,25 @@ public class XrayClient implements ClientModInitializer {
 		enabled = value;
 		// F3+A と同じ全チャンク再構築。Sodium もこれで作り直す
 		client.levelExtractor.allChanged();
+		updateLods();
 		if (client.player != null) {
 			client.player.sendOverlayMessage(enabled
 					? Component.translatable("message.xray.enabled", mode.displayName())
 					: Component.translatable("message.xray.disabled"));
+		}
+	}
+
+	// 透視中は Distant Horizons の LOD も隠す
+	private static void updateLods() {
+		if (lodsFailed || !FabricLoader.getInstance().isModLoaded("distanthorizons")) {
+			return;
+		}
+		try {
+			DistantHorizonsLods.setHidden(isEnabled());
+		} catch (LinkageError e) {
+			// DH の API が変わっていても xray は落とさない
+			lodsFailed = true;
+			LOGGER.warn("Distant Horizons API is not compatible; LODs stay visible while xray is on: {}", e.toString());
 		}
 	}
 

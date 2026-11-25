@@ -8,12 +8,12 @@ import java.util.function.IntPredicate;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import com.omuraisu.testkit.Asserts;
+import com.omuraisu.testkit.Scenario;
 import com.omuraisu.testkit.Screenshots;
 import com.omuraisu.xray.client.ModeWheelScreen;
 import com.omuraisu.xray.client.XrayClient;
 import com.omuraisu.xray.client.XrayMode;
 
-import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.client.Camera;
@@ -35,7 +35,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
-public class XrayClientGameTest implements FabricClientGameTest {
+public class XrayClientGameTest implements Scenario {
 	// ModeWheelScreen と同じ外周の半径
 	private static final int RADIUS = 54;
 	private static final int FAR = 72;
@@ -46,7 +46,12 @@ public class XrayClientGameTest implements FabricClientGameTest {
 	}
 
 	@Override
-	public void runTest(ClientGameTestContext context) {
+	public String name() {
+		return "xray";
+	}
+
+	@Override
+	public void run(ClientGameTestContext context) {
 		testConfig(context);
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			singleplayer.getConnection().waitForChunksRender();
