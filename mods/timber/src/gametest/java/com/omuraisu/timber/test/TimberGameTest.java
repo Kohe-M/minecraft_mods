@@ -18,6 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.border.WorldBorder;
 
 public class TimberGameTest {
 	private static final List<BlockPos> TRUNK = List.of(
@@ -92,6 +93,32 @@ public class TimberGameTest {
 
 		helper.assertValueEqual(axe.getMaxDamage() - axe.getDamageValue(), 1, "remaining durability");
 		helper.assertBlockPresent(Blocks.OAK_LOG, TRUNK.getLast());
+		helper.succeed();
+	}
+
+	// まとめて壊す原木も、プレイヤーが触れない場所（ワールドボーダーの外・スポーン保護）のものは残す
+	@GameTest
+	public void keepsLogsOutsideWorldBorder(GameTestHelper helper) {
+		placeTrunk(helper);
+		helper.setBlock(new BlockPos(4, 6, 4), Blocks.OAK_LEAVES);
+		WorldBorder border = helper.getLevel().getWorldBorder();
+		double centerX = border.getCenterX();
+		double centerZ = border.getCenterZ();
+		double size = border.getSize();
+		// 幹の列（3, 3）だけがボーダーの中に入る
+		BlockPos trunk = helper.absolutePos(TRUNK.getFirst());
+		border.setCenter(trunk.getX() + 0.5, trunk.getZ() + 0.5);
+		border.setSize(1);
+		try {
+			chop(helper, true, new ItemStack(Items.IRON_AXE));
+		} finally {
+			// ボーダーはワールド全体に効くので、同じ tick のうちに必ず戻す
+			border.setCenter(centerX, centerZ);
+			border.setSize(size);
+		}
+
+		TRUNK.subList(0, 4).forEach(pos -> helper.assertBlockNotPresent(Blocks.OAK_LOG, pos));
+		TRUNK.subList(4, 6).forEach(pos -> helper.assertBlockPresent(Blocks.OAK_LOG, pos));
 		helper.succeed();
 	}
 

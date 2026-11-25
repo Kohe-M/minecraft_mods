@@ -82,7 +82,10 @@ public class Timber implements ModInitializer {
 					if (!axe.is(ItemTags.AXES) || axe.isDamageableItem() && axe.getMaxDamage() - axe.getDamageValue() <= 2) {
 						break;
 					}
-					serverPlayer.gameMode.destroyBlock(log);
+					// destroyBlock はスポーン保護とワールドボーダーを確かめない。外から触れない原木は残す
+					if (level.mayInteract(serverPlayer, log)) {
+						serverPlayer.gameMode.destroyBlock(log);
+					}
 				}
 			} finally {
 				felling = false;
