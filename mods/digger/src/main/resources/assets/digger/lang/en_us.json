@@ -1,0 +1,11 @@
+{
+	"key.category.digger.main": "Digger",
+	"key.digger.area": "Toggle Area Mining",
+	"key.digger.vein": "Toggle Vein Mining",
+	"message.digger.area": "Area Mining: %s × %s × %s",
+	"message.digger.area.off": "Area Mining: OFF",
+	"message.digger.vein.on": "Vein Mining: ON",
+	"message.digger.vein.off": "Vein Mining: OFF",
+	"message.digger.area.unsupported": "Area Mining is not available on this server",
+	"message.digger.vein.unsupported": "Vein Mining is not available on this server"
+}

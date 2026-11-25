@@ -17,6 +17,8 @@
 - `IOWorker` は読み込みを保存より先に回す。読み込みを詰め続けると保存が進まず、書く前のチャンクがメモリに溜まる。読み込みは IO スレッド 1 本で展開・読み解きまで行うので、多く読むならリージョンファイルを自分で読む
 - チャンクの生成の段階は STRUCTURE_STARTS・STRUCTURE_REFERENCES・BIOMES・TERRAIN（ノイズ・地表・洞窟をまとめたもの）・FEATURES の順。生成の仕事は `ChunkMap.worldgenTaskDispatcher`（`ChunkTaskDispatcher`）が `ChunkTaskPriorityQueue` に、チャンクのレベル（`ChunkHolder.getQueueLevel`）を段にして並べる。小さい段から 1 チャンクずつ取り出し、1 本の列（`ConsecutiveExecutor` の worldgen）で順に動かす。構造物と地物の配置はこの列の中で同期に動き、BIOMES と TERRAIN の中身だけが `Util.backgroundExecutor()`（コア数 − 1 本、ほかの仕事と共有）に出る。レベルが変わると `resortChunkTasks` が古いレベルの段から仕事を探して移す
 - `ServerChunkCache.getChunkFuture` をメインスレッドから呼ぶと、そのチャンクができるまでメインスレッドで待つ（`managedBlock`）。待たずに頼むときは別のスレッドから呼ぶ（メインスレッドへのタスクになる）
+- Fabric の `PlayerBlockBreakEvents.AFTER` は `ServerPlayerGameMode.destroyBlock` の `Block.destroy` のところで呼ばれ、`ItemStack.mineBlock`（耐久）と `Block.playerDestroy`（ドロップ・経験値）より前。狙ったブロックの耐久とドロップはイベントの後に起きるので、まとめて壊すときに残す耐久や集めるドロップはこの順番を前提にする
+- `Level.mayInteract` は `Level` ではいつも true。スポーン保護とワールドボーダーを見るのは `ServerLevel` の上書きだけなので、サーバーが断る場所にも枠線を出さないようにするには自分で確かめる。ワールドボーダーは `Level.getWorldBorder()` でクライアントも同じ値を持っているが、スポーン保護はサーバーだけが知る
 - サーバーの遅れは `getNextTickTime()` と今の時刻の差では測れない（クライアントのゲームテストではいつも 0.5 秒ほど遅れて見える）。直近の数 tick にかかった実時間で測る
 - ワールドから外れたチャンクの保存（`ChunkMap.processUnloads`）は、待ちが 2000 を超えた分と、tick の合間に時間が余っている間だけ進む。クライアントのゲームテストの内蔵サーバーは時間が余らない扱いなので、多くのチャンクを生成した後は 2000 個が保存待ちのまま残る（`pendingUnloads`）。テストではメモリにある方の状態も見る
 - クライアントのゲームテストで入力がないまま 10 分たつと、`inactivityFpsLimit`（既定は afk）で 10 FPS に落ち、内蔵サーバーの tick もそれに引きずられて遅れる（Can't keep up が続く）。長く走らせて測るときは `options.inactivityFpsLimit()` を `InactivityFpsLimit.MINIMIZED` にする

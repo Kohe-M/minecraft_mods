@@ -1,0 +1,11 @@
+{
+	"required": true,
+	"package": "com.omuraisu.digger.mixin",
+	"compatibilityLevel": "JAVA_${java_version}",
+	"mixins": [
+		"ServerPlayerGameModeMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}

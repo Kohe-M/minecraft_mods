@@ -39,7 +39,7 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 
 - どちらのゲームテストを走らせるかは `mods/<mod>/gradle.properties` の `server_gametest`・`client_gametest`（`true` か `false`）。ルートの `build.gradle` と `dev.py test` が同じものを読む。どちらも `true` でなければ gametest のソースセットは作らない
   - 以前は mod ごとの `build.gradle` の `enableClientGameTests` を dev.py が正規表現で読んでいた
-- サーバーのゲームテスト（`server_gametest=true`）は sorter と timber。`./gradlew build` で走る
+- サーバーのゲームテスト（`server_gametest=true`）は digger・sorter・timber。`./gradlew build` で走る
 - ほかはクライアントのゲームテスト（`client_gametest=true`、`runClientGameTest`）。ルートの `build.gradle` の BuildService（`minecraftClients`）で同時に起動する数を絞り、時間切れを付ける
 - 長いクライアントのゲームテストは、testkit の `Scenario` で独立したシナリオに分ける。`-Pscenarios=a,b` をルートの `build.gradle` がシステムプロパティ `testkit.scenarios` にして渡し、名前の合わないシナリオは飛ばす（[development.md](development.md)）
 
@@ -48,7 +48,7 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 | | `environment` | 入口 |
 |---|---|---|
 | クライアントだけ（fullbright・peek・placer・refill・xray・zoom） | `client` | client の `<Mod>Client` |
-| サーバーでも動く（minimap・sorter・timber） | `*` | main の `<Mod>` と client の `<Mod>Client` |
+| サーバーでも動く（digger・minimap・sorter・timber） | `*` | main の `<Mod>` と client の `<Mod>Client` |
 | jori | `*` | main の `Jori` と client の `JoriClient` |
 
 ## 共通の作り
@@ -78,7 +78,7 @@ Loom の `splitEnvironmentSourceSets` で分ける。
 | fullbright | `LightmapRenderStateExtractor`（ライトマップ） | Iris の `CommonUniforms`（シェーダーパックの uniform） |
 
 - Sodium のチャンクの作り直しは、バニラと同じ `Minecraft.levelExtractor.allChanged()` で起きる
-- ほかの mod は Sodium が置き換える経路に触らないので、Sodium・Iris 用のフックはない。minimap の地図は HUD と画面、光の柱はビーコンのレンダータイプ、peek は GUI の描画、zoom の FOV はバニラの `Camera` から Sodium・Iris にも渡る。placer・refill・sorter・timber は描画に関わらない
+- ほかの mod は Sodium が置き換える経路に触らないので、Sodium・Iris 用のフックはない。minimap の地図は HUD と画面、光の柱はビーコンのレンダータイプ、digger の枠線はバニラの枠線と同じレンダータイプ、peek は GUI の描画、zoom の FOV はバニラの `Camera` から Sodium・Iris にも渡る。placer・refill・sorter・timber は描画に関わらない
 
 ## Distant Horizons
 
@@ -91,6 +91,7 @@ Distant Horizons（DH）はバニラの描画距離の外の地形を LOD とし
 | fullbright | DH は LOD の色にバニラのライトマップをそのまま使うので、ライトマップの明るさを差し替えるだけで LOD も明るくなる。DH 用のフックはない |
 | zoom | DH は LOD を描くのに、バニラがワールドの描画で使う射影行列（`ProjectionMatrixBuffer` に書かれる値）を読むので、`Camera.calculateFov` の差し替えが LOD にも届く。DH 用のフックはない |
 | minimap の遠くの地形 | 地図の地形（`FarTerrain`）は自前のスレッドでリージョンファイルを読み、vanilla の生成の列で FEATURES まで生成する。DH は自分のスレッドで生成し、LOD のデータも自分の DB に持つので、列もデータも共有しない（DH の設定で生成の方法を「サーバー」にしたときだけ vanilla の列を使うが、vanilla の仕事として順に並ぶだけ） |
+| digger | 枠線はバニラの枠線と同じレンダータイプで、手の届く距離のブロックの表面に描く。フェードの掛かる距離に入らないので、DH 用のフックはない |
 | peek・placer・refill・sorter・timber | 描画に関わらない |
 
 - DH は `java.awt.headless` を false にするので、ゲームテストが失敗すると Fabric Loader のエラーの画面が開いて終わらなくなる。ルートの `build.gradle` が `runClientGameTest` に `fabric.noGui` を渡す

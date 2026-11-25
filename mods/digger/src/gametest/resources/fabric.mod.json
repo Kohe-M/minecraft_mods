@@ -1,0 +1,19 @@
+{
+	"schemaVersion": 1,
+	"id": "digger-gametest",
+	"version": "1.0.0",
+	"name": "Digger GameTest",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-gametest": [
+			"com.omuraisu.digger.test.DiggerServerGameTest"
+		],
+		"fabric-client-gametest": [
+			"com.omuraisu.digger.test.DiggerClientGameTest",
+			"com.omuraisu.digger.test.DistantHorizonsTest"
+		]
+	},
+	"depends": {
+		"digger": "*"
+	}
+}

@@ -1,0 +1,11 @@
+{
+	"key.category.digger.main": "Digger",
+	"key.digger.area": "範囲採掘の切り替え",
+	"key.digger.vein": "鉱石一括の切り替え",
+	"message.digger.area": "範囲採掘: %s × %s × %s",
+	"message.digger.area.off": "範囲採掘: OFF",
+	"message.digger.vein.on": "鉱石一括: ON",
+	"message.digger.vein.off": "鉱石一括: OFF",
+	"message.digger.area.unsupported": "範囲採掘はこのサーバーでは使えません",
+	"message.digger.vein.unsupported": "鉱石一括はこのサーバーでは使えません"
+}

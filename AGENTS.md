@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Fabric mod（fullbright / minimap / peek / placer / refill / sorter / timber / xray / zoom）と、それらを 1 つにまとめた jori を `mods/` に置き、1つの Gradle マルチプロジェクトで管理するリポジトリ。
+Fabric mod（digger / fullbright / minimap / peek / placer / refill / sorter / timber / xray / zoom）と、それらを 1 つにまとめた jori を `mods/` に置き、1つの Gradle マルチプロジェクトで管理するリポジトリ。
 
 ここには開発環境・手順・決まりごとだけを書く。仕様と仕組みは `docs/` に置く。
 
@@ -103,7 +103,7 @@ Conventional Commits 形式で、日本語で書く。
 | `build` | Gradle・依存・MC バージョンの更新 |
 | `chore` | その他 |
 
-- scope は mod 名（`fullbright` / `jori` / `minimap` / `peek` / `placer` / `refill` / `sorter` / `timber` / `xray` / `zoom`）。複数の mod やリポジトリ全体に関わるときは省く
+- scope は mod 名（`digger` / `fullbright` / `jori` / `minimap` / `peek` / `placer` / `refill` / `sorter` / `timber` / `xray` / `zoom`）。複数の mod やリポジトリ全体に関わるときは省く
 - 1コミットで扱う mod は1つ。共通設定の変更と mod の変更は分ける
 - 件名は体言止めで50字程度まで。句点は付けない
 - MC 更新は `build: Minecraft 26.4 に対応`、リリースは `chore(sorter): 1.1.0 をリリース`

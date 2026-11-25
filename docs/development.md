@@ -40,12 +40,12 @@ python tools/dev.py test xray --no-dh        # Distant Horizons と併用する 
   - 時間切れのクライアントだけを 1 つずつ走らせ直し、その回の結果だけで決める。テストの失敗は走らせ直さない
   - 最後に、check と同じソースどうしの食い違い（言語ファイルのキー・jori の一覧など）も確かめ、あれば NG
 - `--scenario` は `-Pscenarios=...` になり、testkit の `Scenario` が名前の合わないシナリオを飛ばす。修正の途中は関わるシナリオだけを回し、コミットの前にはシナリオを付けずに走らせる。シナリオの名前は `docs/mods/<mod>.md` のゲームテストの節にある
-- 描画にフックする mod（`mods/<mod>/gradle.properties` に `vanilla_render_test=true`。いまは xray・fullbright・minimap）は、Sodium + Iris でビルドとすべてのテストを走らせた後に、バニラ描画（`-PnoSodium`）でもう一度クライアントのテストを走らせる。両方が通ってはじめて OK
+- 描画にフックする mod（`mods/<mod>/gradle.properties` に `vanilla_render_test=true`。いまは digger・fullbright・minimap・xray）は、Sodium + Iris でビルドとすべてのテストを走らせた後に、バニラ描画（`-PnoSodium`）でもう一度クライアントのテストを走らせる。両方が通ってはじめて OK
   - Sodium が置き換える経路とバニラの経路の両方にフックしているので、片方だけでは、もう片方で壊れたことに気づけない。ふだん遊ぶのは Sodium + Iris なので、そちらを先に走らせる
   - `--no-sodium` ならバニラ描画だけ（2 回目はない）。`--no-vanilla` で 2 回目を飛ばす（修正の途中に。コミットの前は飛ばさない）
   - 2 回目は Gradle を別に走らせる（`-PnoSodium` はビルド全体の設定なので、1 回の Gradle で両方は走らせられない）。時間切れの走らせ直しは回ごとに行う
   - ゲームのログとスクリーンショットは 2 回目で上書きされるので、1 回目の失敗の中身とスクリーンショットは 1 回目が終わったときに読んで写しておく。2 回目の前には、ゲームの実行フォルダのスクリーンショットを消す（2 回目が走らなかったときに 1 回目のものが混ざらないように）
-- Distant Horizons と併用する mod（`distant_horizons_test=true`。いまは fullbright・jori・minimap・xray・zoom）は、バニラ描画の後に DH 入り（`-PdistantHorizons`）でもう一度クライアントのテストを走らせる。順番は Sodium + Iris → バニラ描画 → DH。3 つとも通ってはじめて OK
+- Distant Horizons と併用する mod（`distant_horizons_test=true`。いまは digger・fullbright・jori・minimap・xray・zoom）は、バニラ描画の後に DH 入り（`-PdistantHorizons`）でもう一度クライアントのテストを走らせる。順番は Sodium + Iris → バニラ描画 → DH。3 つとも通ってはじめて OK
   - DH の回はシナリオ `distant-horizons` だけを走らせる（`-Pscenarios=distant-horizons`）。DH は遠くの地形を生成し続けるので、生成の速さを測る minimap のテストなど、ほかのシナリオの時間や画素が揺れるため。DH と併用する mod が崩れていないかは、その mod の `distant-horizons` シナリオで確かめる
   - `--no-dh` で DH の回を飛ばす。`--no-sodium` と `--no-client` のときは走らせない。`--scenario` で絞ったときは、`distant-horizons` を指定したときだけ走らせる（シナリオを絞らずに走らせるコミットの前は、DH の回も走る）
   - DH の回も Gradle を別に走らせる（`-PdistantHorizons` もビルド全体の設定）。スクリーンショットとゲームのログはバニラ描画の回と同じく上書きされるので、回ごとに写して消す
