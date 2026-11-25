@@ -47,3 +47,6 @@
 - 各 mod の止まり方（`setActive(false)` の間）は各 mod のテストで、画面・設定ファイル・専用サーバーは jori のテストで確かめる
 - クライアントのゲームテストの専用サーバーは同じ JVM で動くので、サーバーが読んだ設定はクライアントの `isActive()` にも及ぶ
 - テストから `setActive` を呼ぶときは `runOnClient` の中で呼ぶ（xray は `Minecraft.getInstance()` を使い、テストのスレッドからは呼べない）
+- `distant-horizons` シナリオ（`DistantHorizonsTest`）は、DH が入っていないときは何もせず戻る。スーパーフラットの地面から 60 ブロックほど上に足場を作り、200 ブロック先の LOD の地面を見る
+  - 全 mod が有効な状態で LOD が描かれることを `Lods.waitForRendering` で確かめ、ポーズ画面の Jori の一覧から全タイルを押して無効にしても LOD が描かれ続けること、戻しても描かれることを確かめる。jori の切り替えは LOD の描画に関わらない
+  - 一覧は `Widgets.click` で mod の名前（`fabric.mod.json` の name）を押す。終わったら全 mod を有効に戻す

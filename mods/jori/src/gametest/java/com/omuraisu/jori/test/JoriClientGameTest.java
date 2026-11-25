@@ -17,12 +17,12 @@ import com.omuraisu.minimap.TerrainView;
 import com.omuraisu.minimap.client.MinimapClient;
 import com.omuraisu.peek.client.ShulkerPreview;
 import com.omuraisu.sorter.SortPayload;
+import com.omuraisu.testkit.Scenario;
 import com.omuraisu.testkit.TestServers;
 import com.omuraisu.testkit.Widgets;
 import com.omuraisu.timber.TogglePayload;
 import com.omuraisu.zoom.client.ZoomClient;
 
-import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerConnection;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestDedicatedServerContext;
@@ -43,11 +43,16 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemContainerContents;
 
-public class JoriClientGameTest implements FabricClientGameTest {
+public class JoriClientGameTest implements Scenario {
 	private static final int SETTLE_TICKS = 20;
 
 	@Override
-	public void runTest(ClientGameTestContext context) {
+	public String name() {
+		return "jori";
+	}
+
+	@Override
+	public void run(ClientGameTestContext context) {
 		// 前回の実行の設定を残さない
 		setAll(context, true);
 
