@@ -58,6 +58,11 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 			testScaffolding();
 			testPressAgain();
 			testShortPress();
+			testWalkBack();
+			testWalkSideways();
+			testWalkForward();
+			testWideBridge();
+			testWallWalkBack();
 		}
 	}
 
@@ -372,6 +377,188 @@ public class PlacerClientGameTest implements FabricClientGameTest {
 		context.waitTick();
 		releaseUse();
 		assertPlaced(Blocks.OAK_PLANKS, Set.of(new BlockPos(0, FEET_Y, -3)));
+	}
+
+	// 置いたブロックの南面に続けて、後ろへ歩いた分だけ一直線に伸びる
+	private void testWalkBack() {
+		setUp(Items.OAK_PLANKS);
+		putStone(0, 102, -4);
+		// 目（102.62）と同じ高さのブロックなので、水平に南面へ当たる
+		context.getInput().lookAt(180, 0);
+		holdUse();
+		context.waitTicks(5);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(new BlockPos(0, 102, -3)));
+
+		// 約 4 ブロック下がる。1 ブロックごとの置ける境目から離して止める
+		context.getInput().holdKey(options -> options.keyDown);
+		while (playerZ() < 4.1) {
+			context.waitTick();
+		}
+		context.getInput().releaseKey(options -> options.keyDown);
+		context.waitTicks(5);
+
+		// 0.5 から歩いた距離を四捨五入した数だけ、-2 から南へ伸びる
+		Set<BlockPos> expected = new HashSet<>();
+		for (int k = 0; k <= (int) Math.floor(playerZ()); k++) {
+			expected.add(new BlockPos(0, 102, -3 + k));
+		}
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+
+		// 止めたまま押し続けても増えない
+		context.waitTicks(HOLD_TICKS);
+		releaseUse();
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+	}
+
+	// 置いたブロックの東面に続けて、横へ歩いた分だけ一直線に伸びる
+	private void testWalkSideways() {
+		setUp(Items.OAK_PLANKS);
+		putStone(-2, 102, -2);
+		// 石の東面の中央（目と同じ高さ）を狙う。東面に (-1,102,-2) が置ける
+		aim(new Vec3(-1, 102.62, -1.5));
+		holdUse();
+		context.waitTicks(5);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(new BlockPos(-1, 102, -2)));
+
+		// 後ろと右を同時に押すと、向き (0.99, 0.14) でほぼ東へ歩く
+		context.getInput().holdKey(options -> options.keyDown);
+		context.getInput().holdKey(options -> options.keyRight);
+		while (playerX() < 3.5) {
+			context.waitTick();
+		}
+		context.getInput().releaseKey(options -> options.keyRight);
+		context.getInput().releaseKey(options -> options.keyDown);
+		context.waitTicks(5);
+
+		// 東へ 3.44 で (2,102,-2)、4.56 で (3,102,-2) が射線に乗る。3.5 から 4.5 の間に止める
+		Set<BlockPos> expected = new HashSet<>();
+		for (int x = -1; x <= 2; x++) {
+			expected.add(new BlockPos(x, 102, -2));
+		}
+		releaseUse();
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+	}
+
+	// 少し下がっただけでも、前へ歩いても、視線が自分のブロックに当たっている間は増えない
+	private void testWalkForward() {
+		setUp(Items.OAK_PLANKS);
+		putStone(0, 102, -4);
+		context.getInput().lookAt(180, 0);
+		holdUse();
+		context.waitTicks(5);
+		Set<BlockPos> expected = Set.of(new BlockPos(0, 102, -3));
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+
+		// 続きになるのは 0.5 ブロック歩いてから。行き過ぎないようスニークで 0.3 ほど下がる（目の高さ 102.27 でも南面に当たる）
+		context.getInput().holdKey(options -> options.keyShift);
+		context.getInput().holdKey(options -> options.keyDown);
+		while (playerZ() < 0.75) {
+			context.waitTick();
+		}
+		context.getInput().releaseKey(options -> options.keyDown);
+		context.waitTicks(10);
+		context.getInput().releaseKey(options -> options.keyShift);
+		if (playerZ() >= 1) {
+			throw new AssertionError("should step back less than 0.5 but was at z=" + playerZ());
+		}
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+
+		// 自分のブロックの南面を見たまま 1 ブロック前へ歩く
+		context.getInput().holdKey(options -> options.keyUp);
+		while (playerZ() > -0.5) {
+			context.waitTick();
+		}
+		context.getInput().releaseKey(options -> options.keyUp);
+		context.waitTicks(5);
+		releaseUse();
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+	}
+
+	// スニークで後ろへ歩きながら幅 3 の橋を架ける。足元のマスは横にも置ける
+	private void testWideBridge() {
+		setUp(Items.OAK_PLANKS);
+		removeFloorBehind();
+		// 押した瞬間は足のマスを見ていて、体と重なるので何も置けない
+		holdUse();
+		context.getInput().lookAt(180, 81);
+		context.getInput().holdKey(options -> options.keyShift);
+
+		for (int n = 1; n <= 3; n++) {
+			// 真っ直ぐ後ろへ下がり、橋の端 z=n を目が 0.2 ほど越えるまで歩く
+			context.getInput().lookAt(180, 81);
+			context.getInput().holdKey(options -> options.keyDown);
+			while (eyeZ() < n + 0.2) {
+				context.waitTick();
+			}
+			context.getInput().releaseKey(options -> options.keyDown);
+			context.waitTicks(2);
+
+			// スニークのまま足元の横を順に狙い、2〜3 tick ずつ待つ
+			aim(new Vec3(0.5, FLOOR_Y + 0.5, n));
+			context.waitTicks(3);
+			aim(new Vec3(1.5, FLOOR_Y + 0.5, n));
+			context.waitTicks(3);
+			aim(new Vec3(-0.5, FLOOR_Y + 0.5, n));
+			context.waitTicks(3);
+		}
+
+		releaseUse();
+		context.getInput().releaseKey(options -> options.keyShift);
+
+		Set<BlockPos> expected = new HashSet<>();
+		for (int x = -1; x <= 1; x++) {
+			for (int z = 1; z <= 3; z++) {
+				expected.add(new BlockPos(x, FLOOR_Y, z));
+			}
+		}
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+	}
+
+	// 壁に張って後ろへ歩くと、足と同じ段なら床に沿って伸びる
+	private void testWallWalkBack() {
+		setUp(Items.OAK_PLANKS);
+		singleplayer.getServer().runOnServer(server -> fill(server.overworld(),
+				new BlockPos(-3, FEET_Y, -3), new BlockPos(3, FEET_Y + 3, -3), Blocks.STONE));
+		context.waitTicks(2);
+
+		// 壁の南面の、足と同じ段（Y=101）を狙う
+		aim(new Vec3(0.5, FEET_Y + 0.3, -2));
+		holdUse();
+		context.waitTicks(5);
+		assertPlaced(Blocks.OAK_PLANKS, Set.of(new BlockPos(0, FEET_Y, -2)));
+
+		// 約 3 ブロック下がる。足と同じ段なので、壁を張っていても置ける
+		context.getInput().holdKey(options -> options.keyDown);
+		while (playerZ() < 3.1) {
+			context.waitTick();
+		}
+		context.getInput().releaseKey(options -> options.keyDown);
+		context.waitTicks(5);
+
+		Set<BlockPos> expected = new HashSet<>();
+		for (int k = 0; k <= (int) Math.floor(playerZ()); k++) {
+			expected.add(new BlockPos(0, FEET_Y, -2 + k));
+		}
+		releaseUse();
+		assertPlaced(Blocks.OAK_PLANKS, expected);
+	}
+
+	private void putStone(int x, int y, int z) {
+		singleplayer.getServer().runOnServer(server -> server.overworld()
+				.setBlockAndUpdate(new BlockPos(x, y, z), Blocks.STONE.defaultBlockState()));
+		context.waitTicks(2);
+	}
+
+	private double playerX() {
+		return context.computeOnClient(client -> client.player.position().x);
+	}
+
+	private double playerZ() {
+		return context.computeOnClient(client -> client.player.position().z);
+	}
+
+	private double eyeZ() {
+		return context.computeOnClient(client -> client.player.getEyePosition().z);
 	}
 
 	private void setUp(ItemLike held) {
