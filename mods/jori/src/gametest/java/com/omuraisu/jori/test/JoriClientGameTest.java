@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.util.List;
 import java.util.function.Supplier;
 
+import com.omuraisu.digger.SettingsPayload;
 import com.omuraisu.fullbright.client.FullbrightClient;
 import com.omuraisu.jori.Feature;
 import com.omuraisu.jori.JoriConfig;
@@ -148,7 +149,7 @@ public class JoriClientGameTest implements Scenario {
 	// 専用サーバーは起動するときに設定ファイルを読み、無効にした mod は受け口を作らない。
 	// テストではクライアントと同じ JVM で動くので、切り替えはクライアントにも及ぶ
 	private static void testDedicatedServer(ClientGameTestContext context) {
-		write("minimap=false\nsorter=false\ntimber=false\nzoom=false\n");
+		write("digger=false\nminimap=false\nsorter=false\ntimber=false\nzoom=false\n");
 		try (TestDedicatedServerContext server = TestServers.create(context)) {
 			for (Feature feature : Feature.SERVER) {
 				assertEquals(feature.id() + " on the server", false, feature.isActive());
@@ -156,7 +157,7 @@ public class JoriClientGameTest implements Scenario {
 			// クライアントだけの mod は専用サーバーでは切り替えない
 			assertEquals("zoom", true, ZoomClient.isActive());
 			// 知らない mod の行も消さずに残す
-			assertEquals("config on the server", "minimap=false\nsorter=false\ntimber=false\nzoom=false\n", read());
+			assertEquals("config on the server", "digger=false\nminimap=false\nsorter=false\ntimber=false\nzoom=false\n", read());
 
 			try (TestDedicatedServerConnection connection = server.connect()) {
 				connection.waitForChunksRender();
@@ -179,7 +180,7 @@ public class JoriClientGameTest implements Scenario {
 	}
 
 	private static void assertCanSend(ClientGameTestContext context, boolean expected) {
-		for (CustomPacketPayload.Type<?> type : List.of(SortPayload.TYPE, TerrainView.TYPE, TogglePayload.TYPE)) {
+		for (CustomPacketPayload.Type<?> type : List.of(SettingsPayload.TYPE, SortPayload.TYPE, TerrainView.TYPE, TogglePayload.TYPE)) {
 			assertEquals("can send " + type.id(), expected, context.computeOnClient(client -> ClientPlayNetworking.canSend(type)));
 		}
 	}

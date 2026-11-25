@@ -13,7 +13,7 @@
 
 各 mod は `isActive()` / `setActive(boolean)` を持つ。false の間はバニラと同じにふるまい、その mod のキーも効かない（押した分は捨てる）。true に戻すと、キーで決めた状態（明るさや透過の ON/OFF など）に戻る。
 
-- サーバーでも動く mod（minimap・sorter・timber）は main の `Minimap` / `Sorter` / `Timber` に、クライアントだけの mod は client の `<Mod>Client` に置く。シングルプレイではクライアントと内蔵サーバーが同じ値を見る
+- サーバーでも動く mod（digger・minimap・sorter・timber）は main の `Digger` / `Minimap` / `Sorter` / `Timber` に、クライアントだけの mod は client の `<Mod>Client` に置く。シングルプレイではクライアントと内蔵サーバーが同じ値を見る
 - 切り替えはすぐ効く。xray は透過中なら全チャンクを描き直し、timber はサーバーに OFF と伝える
 
 ## 設定
@@ -28,7 +28,7 @@
 タイルを 3 列に並べる。タイルはアイコン（各 mod の `assets/<mod>/icon.png`）・名前（`fabric.mod.json` の name）・スイッチだけ。押すとすぐ切り替えて保存する。
 
 - 説明（jori の言語ファイルの `jori.description.<mod>`）と、その mod のキー（カテゴリの名前空間が mod ID のもの）はツールチップに出す
-- サーバーにも要る mod（sorter・timber）は、いまのサーバーが受け付けないときツールチップに「このサーバーでは使えません」を足す
+- サーバーにも要る mod（digger・sorter・timber）は、いまのサーバーが受け付けないときツールチップに「このサーバーでは使えません」を足す
 - 画面が狭いときは列を減らし、タイルを低くして収める。マウスで押したタイルにはフォーカスを残さない
 
 ## 入口
@@ -37,7 +37,7 @@
 
 ## サーバー
 
-専用サーバーは起動するとき（`SERVER_STARTING`）に `config/jori.txt` を読み、minimap・sorter・timber を切り替える。3 つの行がなければ書き足す。
+専用サーバーは起動するとき（`SERVER_STARTING`）に `config/jori.txt` を読み、digger・minimap・sorter・timber を切り替える。4 つの行がなければ書き足す。
 
 - 無効にした mod は、接続ごとの受け口（`ServerPlayConnectionEvents.INIT` で `registerReceiver`）を作らない。クライアントには mod のないサーバーと同じに見える（ソートボタンが出ない、など）
 - シングルプレイの内蔵サーバーは途中で切り替えられるので、受け口は常に作り、届いた時点で `isActive()` を確かめる

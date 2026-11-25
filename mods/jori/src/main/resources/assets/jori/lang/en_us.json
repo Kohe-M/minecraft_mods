@@ -1,4 +1,5 @@
 {
+	"jori.description.digger": "Digs out the blocks around the one you target. Hold V and scroll to change the size; hold Shift too to change the depth. Toggle vein mining of connected ores separately with H.",
 	"jori.description.fullbright": "Lifts the brightness cap so dark places stay visible.",
 	"jori.description.minimap": "Shows a map of your surroundings and your coordinates in the top right. Place pins on the map screen; each pin gets a beam of light.",
 	"jori.description.peek": "Hover over a shulker box to see its contents as icons.",

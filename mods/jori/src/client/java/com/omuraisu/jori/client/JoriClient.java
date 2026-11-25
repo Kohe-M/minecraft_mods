@@ -5,6 +5,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
+import com.omuraisu.digger.SettingsPayload;
 import com.omuraisu.fullbright.client.FullbrightClient;
 import com.omuraisu.jori.Feature;
 import com.omuraisu.jori.JoriConfig;
@@ -34,6 +35,7 @@ import net.minecraft.resources.Identifier;
 public class JoriClient implements ClientModInitializer {
 	// 一覧に並べる順
 	public static final List<Feature> FEATURES = List.of(
+			Feature.DIGGER,
 			new Feature("fullbright", FullbrightClient::isActive, FullbrightClient::setActive),
 			Feature.MINIMAP,
 			new Feature("peek", PeekClient::isActive, PeekClient::setActive),
@@ -46,6 +48,7 @@ public class JoriClient implements ClientModInitializer {
 
 	// サーバーにも入っていないと働かない mod。サーバーが受け付けるかはこのパケットで分かる
 	private static final Map<String, CustomPacketPayload.Type<?>> SERVER_PAYLOADS = Map.of(
+			"digger", SettingsPayload.TYPE,
 			"sorter", SortPayload.TYPE,
 			"timber", TogglePayload.TYPE);
 

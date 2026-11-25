@@ -1,5 +1,5 @@
 // 中に入れる mod。各 mod の jar をそのまま入れるので、mod ID・パケット・設定ファイルは単体のときと同じ
-def modules = ['fullbright', 'minimap', 'peek', 'placer', 'refill', 'sorter', 'timber', 'xray', 'zoom']
+def modules = ['digger', 'fullbright', 'minimap', 'peek', 'placer', 'refill', 'sorter', 'timber', 'xray', 'zoom']
 
 dependencies {
 	modules.each {
