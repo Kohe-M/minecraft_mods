@@ -18,6 +18,7 @@ import com.omuraisu.minimap.TerrainRemoved;
 import com.omuraisu.minimap.TerrainServer;
 import com.omuraisu.minimap.TerrainStamps;
 import com.omuraisu.minimap.TerrainTiles;
+import com.omuraisu.minimap.TerrainWorld;
 
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -66,6 +67,7 @@ public class MinimapClient implements ClientModInitializer {
 		LevelRenderEvents.COLLECT_SUBMITS.register(PinBeams::submit);
 		LevelRenderEvents.END_MAIN.register(PinBeams::drawAfterFade);
 
+		ClientPlayNetworking.registerGlobalReceiver(TerrainWorld.TYPE, (payload, context) -> receiveWorld(context.client(), payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainTiles.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainStamps.TYPE, (payload, context) -> FAR_TERRAIN.stamps(payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainRemoved.TYPE, (payload, context) -> FAR_TERRAIN.removed(payload));
@@ -79,7 +81,11 @@ public class MinimapClient implements ClientModInitializer {
 		ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
 			PINS.open(pinFile(client));
 			FAR_TERRAIN.clear();
-			FAR_TERRAIN.openCache(farTerrainFolder(client));
+			// シングルプレイはセーブの中の保存先を開く。マルチプレイはワールドの ID（TerrainWorld）が届いてから開く。
+			// 前の版のサーバーは ID を送ってこないので、ファイルに残さず読みもしない（別のワールドの色を出すよりよい）
+			if (client.getSingleplayerServer() != null) {
+				FAR_TERRAIN.openCache(client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).resolve("minimap_far"));
+			}
 		});
 		ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> {
 			PINS.close();
@@ -151,14 +157,18 @@ public class MinimapClient implements ClientModInitializer {
 		}
 	}
 
-	// 遠くの地形を残す場所。シングルプレイはセーブの中、マルチプレイはサーバーのアドレスごと
-	private static Path farTerrainFolder(Minecraft client) {
+	// マルチプレイで、ワールドの ID が届いたら、そのワールド用の保存先を開く。
+	// 先に範囲を知らせ始めていても、知らせ直して読み直すため、いったん覚えているものを捨てる
+	private static void receiveWorld(Minecraft client, TerrainWorld payload) {
 		if (client.getSingleplayerServer() != null) {
-			return client.getSingleplayerServer().getWorldPath(LevelResource.ROOT).resolve("minimap_far");
+			return;
 		}
-		return client.getCurrentServer() != null
-				? FabricLoader.getInstance().getGameDir().resolve("minimap_far").resolve(Pins.encodeAddress(client.getCurrentServer().ip))
-				: null;
+		if (client.getCurrentServer() == null) {
+			return;
+		}
+		FAR_TERRAIN.clear();
+		FAR_TERRAIN.openWorld(FabricLoader.getInstance().getGameDir().resolve("minimap_far")
+				.resolve(Pins.encodeAddress(client.getCurrentServer().ip)), payload.id());
 	}
 
 	// サーバーに mod がないときにピンを保存するファイル。シングルプレイは内蔵サーバーがセーブの中に保存するので要らない

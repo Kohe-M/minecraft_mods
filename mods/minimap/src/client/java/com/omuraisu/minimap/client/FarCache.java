@@ -5,30 +5,41 @@ import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.InflaterInputStream;
 
 import com.mojang.logging.LogUtils;
 import com.omuraisu.minimap.TerrainRegions;
 import com.omuraisu.minimap.TerrainTile;
+import com.omuraisu.minimap.WorldId;
 
 import org.slf4j.Logger;
 
 import net.minecraft.resources.Identifier;
 
-// 届いた遠くの地形を、ワールド（シングルプレイ）やサーバーごとにファイルへ残す。32 × 32 チャンクで 1 ファイル。
+// 届いた遠くの地形を、ワールドごとにファイルへ残す。32 × 32 チャンクで 1 ファイル。
 // 色と一緒に版（TerrainTile.stamp）も残し、次に入ったときは版が変わったチャンクだけを送ってもらう。
 // 読み書きは 1 本のスレッドで順に行うので、書いた直後に読んでも書いた中身が返る
 final class FarCache {
 	// 版のない古い形。色はそのまま使い、版は分からないものとして送り直してもらう
 	private static final int MAGIC_UNSTAMPED = 0x4D4D4631;
 	private static final int MAGIC = 0x4D4D4632;
+	// 前の版が作った、ワールドを分けないファイルの名前
+	private static final Pattern LEGACY_REGION = Pattern.compile("r\\.-?\\d+\\.-?\\d+\\.bin(?:\\.tmp)?");
 	private static final Logger LOGGER = LogUtils.getLogger();
 
 	private final ExecutorService io = Executors.newSingleThreadExecutor(runnable -> {
@@ -65,6 +76,59 @@ final class FarCache {
 		}
 		Path file = file(root, dimension, regionX, regionZ);
 		io.execute(() -> write(file, tiles, tileBytes));
+	}
+
+	// 前の版が作った、ワールドを分けないファイルを消す。アドレスのフォルダーの直下の、名前が UUID でないフォルダー
+	// （次元の名前空間。minecraft など）の中の、リージョンのファイルだけを消す。どのワールドの色か分からないので引き継がない。
+	// シンボリックリンクはたどらない。失敗しても遊ぶのには困らないので、ログに出すだけ
+	void deleteLegacy(Path address) {
+		io.execute(() -> {
+			try {
+				deleteLegacyFiles(address);
+			} catch (IOException | RuntimeException e) {
+				LOGGER.warn("Failed to delete the far terrain cache of an older version {}", address, e);
+			}
+		});
+	}
+
+	private static void deleteLegacyFiles(Path address) throws IOException {
+		if (!Files.isDirectory(address, LinkOption.NOFOLLOW_LINKS)) {
+			return;
+		}
+		List<Path> folders;
+		try (Stream<Path> entries = Files.list(address)) {
+			folders = entries
+					.filter(path -> Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS))
+					.filter(path -> WorldId.parse(path.getFileName().toString()) == null)
+					.toList();
+		}
+		for (Path folder : folders) {
+			Files.walkFileTree(folder, new SimpleFileVisitor<>() {
+				@Override
+				public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
+					if (attributes.isRegularFile() && LEGACY_REGION.matcher(file.getFileName().toString()).matches()) {
+						Files.deleteIfExists(file);
+					}
+					return FileVisitResult.CONTINUE;
+				}
+
+				@Override
+				public FileVisitResult visitFileFailed(Path file, IOException failure) {
+					LOGGER.warn("Failed to clean far terrain cache {}", file, failure);
+					return FileVisitResult.CONTINUE;
+				}
+
+				@Override
+				public FileVisitResult postVisitDirectory(Path directory, IOException failure) throws IOException {
+					try {
+						Files.delete(directory);
+					} catch (DirectoryNotEmptyException ignored) {
+						// ほかのファイルがあるので残す
+					}
+					return FileVisitResult.CONTINUE;
+				}
+			});
+		}
 	}
 
 	private static Path file(Path root, Identifier dimension, int regionX, int regionZ) {

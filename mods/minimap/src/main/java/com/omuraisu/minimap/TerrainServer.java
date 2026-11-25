@@ -47,6 +47,7 @@ import net.minecraft.world.level.chunk.ImposterProtoChunk;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.waypoints.WaypointTransmitter;
 
 // マップ画面に描画距離の外を出すため、地形の色を送る。地図のためにチャンクをワールドへ読み込まない。
@@ -91,6 +92,8 @@ public final class TerrainServer {
 	private static TerrainServer current;
 
 	private final MinecraftServer server;
+	// 遠くの地形をクライアントでワールドごとに分けるための ID。セーブのルートに残す
+	private final UUID worldId;
 	private final Map<UUID, TerrainViewer> viewers = new HashMap<>();
 	private final Map<ResourceKey<Level>, TerrainLevel> levels = new HashMap<>();
 	private final TerrainWorkers workers = new TerrainWorkers();
@@ -106,6 +109,7 @@ public final class TerrainServer {
 
 	private TerrainServer(MinecraftServer server) {
 		this.server = server;
+		this.worldId = WorldId.load(server.getWorldPath(LevelResource.ROOT).resolve("minimap_world_id.txt"));
 	}
 
 	static void register() {
@@ -130,6 +134,15 @@ public final class TerrainServer {
 						current.have(context.player(), payload);
 					}
 				});
+			}
+		});
+		// 入った人に、このワールドの ID を送る。Fabric API はこの JOIN を呼んだ後に接続ごとの受け口（TerrainView など）の
+		// 登録を送るので、クライアントでは canSend(TerrainView.TYPE) が true になって範囲を知らせ始めるより先に届く
+		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+			TerrainServer active = current;
+			if (active != null && active.server == server && (Minimap.isActive() || !server.isDedicatedServer())
+					&& ServerPlayNetworking.canSend(handler.player, TerrainWorld.TYPE)) {
+				ServerPlayNetworking.send(handler.player, new TerrainWorld(active.worldId));
 			}
 		});
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -507,7 +520,7 @@ public final class TerrainServer {
 					continue;
 				}
 				region.dirty = true;
-				// クライアントは色を持っているが、もうない（別のワールドの色が残っていた、など）。この接続でメモリから送った色（負の版）は、
+				// クライアントは色を持っているが、もうない（ワールドをバックアップから戻した、など）。この接続でメモリから送った色（負の版）は、
 				// 書かれるのを待ちきれなかっただけなので消さない。消すと、読み込み直すまで地図に穴があく
 				if (have > 0 || have == TerrainTile.STALE) {
 					region.known[index] = 0;

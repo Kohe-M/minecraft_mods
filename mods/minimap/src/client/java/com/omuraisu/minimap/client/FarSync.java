@@ -35,9 +35,14 @@ final class FarSync {
 		this.loaded = loaded;
 	}
 
-	// 接続するたびに、そのワールド・サーバーの保存先を開く。null なら残さない
+	// 接続するたびに、そのワールドの保存先を開く。null なら残さない
 	void open(Path root) {
 		disk.open(root);
+	}
+
+	// 前の版が作った、ワールドを分けないファイルを消す
+	void deleteLegacy(Path address) {
+		disk.deleteLegacy(address);
 	}
 
 	// 切断した。覚えているものを書き、次に接続した相手にはすべて知らせ直す

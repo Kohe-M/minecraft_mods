@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 import com.mojang.blaze3d.platform.Window;
 import com.omuraisu.minimap.TerrainColors;
@@ -126,7 +127,7 @@ public final class FarTerrain {
 		}
 	}
 
-	// サーバーにもうないチャンク（別のワールドの色がファイルに残っていた、など）
+	// サーバーにもうないチャンク（ワールドをバックアップから戻した、など）
 	void removed(TerrainRemoved payload) {
 		FarDimension cache = dimensions.get(payload.dimension());
 		if (cache == null) {
@@ -142,9 +143,16 @@ public final class FarTerrain {
 		}
 	}
 
-	// 接続するたびに、そのワールド・サーバーの保存先を開く。null なら残さない
+	// 接続するたびに、そのワールドの保存先を開く。null なら残さない
 	void openCache(Path root) {
 		sync.open(root);
+	}
+
+	// マルチプレイの、ワールドごとの保存先を開く。前の版が作った、アドレスだけで分けていたファイルも、
+	// どのワールドの色か分からないので引き継がずに消す（シングルプレイのセーブには触れない）
+	void openWorld(Path address, UUID id) {
+		sync.open(address.resolve(id.toString()));
+		sync.deleteLegacy(address);
 	}
 
 	void clear() {

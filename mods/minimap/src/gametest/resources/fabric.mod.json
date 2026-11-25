@@ -9,6 +9,7 @@
 			"com.omuraisu.minimap.test.HudTest",
 			"com.omuraisu.minimap.test.MapScreenTest",
 			"com.omuraisu.minimap.test.ServerTest",
+			"com.omuraisu.minimap.test.WorldChangeTest",
 			"com.omuraisu.minimap.test.FarTerrainTest",
 			"com.omuraisu.minimap.test.BackgroundTerrainTest",
 			"com.omuraisu.minimap.test.TerrainLoadTest",

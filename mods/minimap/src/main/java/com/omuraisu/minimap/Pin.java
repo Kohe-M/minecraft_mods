@@ -1,11 +1,9 @@
 package com.omuraisu.minimap;
 
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -86,13 +84,6 @@ public record Pin(Identifier dimension, int x, int z, String name) {
 
 	// 一時ファイルに書いてから置き換える。書いている途中で落ちても、前の中身か新しい中身のどちらかが残る
 	public static void write(Path file, Collection<Pin> pins) throws IOException {
-		Files.createDirectories(file.getParent());
-		Path temp = file.resolveSibling(file.getFileName() + ".tmp");
-		Files.writeString(temp, pins.stream().map(pin -> pin.line() + "\n").collect(Collectors.joining()));
-		try {
-			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-		} catch (AtomicMoveNotSupportedException e) {
-			Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
-		}
+		TextFile.replace(file, pins.stream().map(pin -> pin.line() + "\n").collect(Collectors.joining()));
 	}
 }
