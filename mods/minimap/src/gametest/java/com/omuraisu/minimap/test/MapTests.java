@@ -23,6 +23,7 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
+import net.irisshaders.iris.Iris;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
@@ -503,6 +504,51 @@ final class MapTests {
 	}
 
 	record Frame(int x, int y, int size) {
+	}
+
+	// テストの中で作る、地形をすべて決まった色にするシェーダーパック。Iris がないときに読み込まれないようにクラスを分ける
+	static final class IrisPack {
+		private static final String NAME = "minimap-probe";
+
+		private static final String VERTEX = """
+				#version 120
+				void main() {
+					gl_Position = ftransform();
+				}
+				""";
+
+		private static final String FRAGMENT = """
+				#version 120
+				void main() {
+					gl_FragData[0] = vec4(1.0, 0.0, 1.0, 1.0);
+				}
+				""";
+
+		static void enable() {
+			try {
+				Path shaders = Iris.getShaderpacksDirectory().resolve(NAME).resolve("shaders");
+				Files.createDirectories(shaders);
+				Files.writeString(shaders.resolve("gbuffers_terrain.vsh"), VERTEX);
+				Files.writeString(shaders.resolve("gbuffers_terrain.fsh"), FRAGMENT);
+
+				Iris.getIrisConfig().setShaderPackName(NAME);
+				Iris.getIrisConfig().setShadersEnabled(true);
+				Iris.getIrisConfig().save();
+				Iris.reload();
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
+
+		static void disable() {
+			try {
+				Iris.getIrisConfig().setShadersEnabled(false);
+				Iris.getIrisConfig().save();
+				Iris.reload();
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
 	}
 
 	// スクリーンショットから切り出した地図。pixels は枠を含む

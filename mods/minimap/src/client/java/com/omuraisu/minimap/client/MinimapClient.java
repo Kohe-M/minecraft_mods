@@ -64,6 +64,7 @@ public class MinimapClient implements ClientModInitializer {
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "map"), MinimapHud::extract);
 		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath("minimap", "pin_labels"), PinBeams::extractLabels);
 		LevelRenderEvents.COLLECT_SUBMITS.register(PinBeams::submit);
+		LevelRenderEvents.END_MAIN.register(PinBeams::drawAfterFade);
 
 		ClientPlayNetworking.registerGlobalReceiver(TerrainTiles.TYPE, (payload, context) -> FAR_TERRAIN.receive(context.client(), payload));
 		ClientPlayNetworking.registerGlobalReceiver(TerrainStamps.TYPE, (payload, context) -> FAR_TERRAIN.stamps(payload));

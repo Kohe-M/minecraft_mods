@@ -23,7 +23,6 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.fabric.api.client.gametest.v1.world.TestWorldSave;
 import net.fabricmc.loader.api.FabricLoader;
-import net.irisshaders.iris.Iris;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.gui.components.EditBox;
@@ -653,7 +652,7 @@ public class MapScreenTest implements Scenario {
 	// シェーダーパックを有効にしても色が変わらない
 	private static void testShaderPack(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
 		teleport(context, singleplayer, PLAYER_X + 25, PLAYER_Z);
-		context.runOnClient(client -> IrisPack.enable());
+		context.runOnClient(client -> MapTests.IrisPack.enable());
 		context.waitTicks(20);
 		singleplayer.getConnection().waitForChunksRender();
 		try {
@@ -672,7 +671,7 @@ public class MapScreenTest implements Scenario {
 			lookAtHorizon(context, beam);
 			assertBeamVisible(context, "shader-pack-beam", beam);
 		} finally {
-			context.runOnClient(client -> IrisPack.disable());
+			context.runOnClient(client -> MapTests.IrisPack.disable());
 			context.waitTicks(20);
 			singleplayer.getConnection().waitForChunksRender();
 		}
@@ -683,51 +682,6 @@ public class MapScreenTest implements Scenario {
 		String name = Pins.serverFile("example.com:25565/*").getFileName().toString();
 		if (!name.equals("example.com%3A25565%2F%2A.txt")) {
 			throw new AssertionError("unexpected server pin file name " + name);
-		}
-	}
-
-	// Iris がないときに読み込まれないようにクラスを分ける
-	private static final class IrisPack {
-		private static final String NAME = "minimap-probe";
-
-		private static final String VERTEX = """
-				#version 120
-				void main() {
-					gl_Position = ftransform();
-				}
-				""";
-
-		private static final String FRAGMENT = """
-				#version 120
-				void main() {
-					gl_FragData[0] = vec4(1.0, 0.0, 1.0, 1.0);
-				}
-				""";
-
-		static void enable() {
-			try {
-				Path shaders = Iris.getShaderpacksDirectory().resolve(NAME).resolve("shaders");
-				Files.createDirectories(shaders);
-				Files.writeString(shaders.resolve("gbuffers_terrain.vsh"), VERTEX);
-				Files.writeString(shaders.resolve("gbuffers_terrain.fsh"), FRAGMENT);
-
-				Iris.getIrisConfig().setShaderPackName(NAME);
-				Iris.getIrisConfig().setShadersEnabled(true);
-				Iris.getIrisConfig().save();
-				Iris.reload();
-			} catch (IOException e) {
-				throw new UncheckedIOException(e);
-			}
-		}
-
-		static void disable() {
-			try {
-				Iris.getIrisConfig().setShadersEnabled(false);
-				Iris.getIrisConfig().save();
-				Iris.reload();
-			} catch (IOException e) {
-				throw new UncheckedIOException(e);
-			}
 		}
 	}
 }

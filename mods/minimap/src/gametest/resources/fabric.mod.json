@@ -11,7 +11,8 @@
 			"com.omuraisu.minimap.test.ServerTest",
 			"com.omuraisu.minimap.test.FarTerrainTest",
 			"com.omuraisu.minimap.test.BackgroundTerrainTest",
-			"com.omuraisu.minimap.test.TerrainLoadTest"
+			"com.omuraisu.minimap.test.TerrainLoadTest",
+			"com.omuraisu.minimap.test.DistantHorizonsTest"
 		]
 	},
 	"depends": {

@@ -1,4 +1,7 @@
 dependencies {
+	// ピンの柱を、Distant Horizons のフェードの後に描くかを決めるために Iris の API をコンパイル時だけ参照する
+	compileOnly "maven.modrinth:iris:${iris_version}"
+
 	// ゲームテストでシェーダーパックを切り替える
 	gametestCompileOnly "maven.modrinth:iris:${iris_version}"
 }

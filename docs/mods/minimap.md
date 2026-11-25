@@ -201,6 +201,11 @@ vanilla は生成の仕事を、チャンクのレベルの順に列（`ChunkTas
 - ピンの位置に薄い光の柱を立てる（ビーコンのレンダータイプ）。F1 で隠す
 - 描画距離の 75% より遠いピンは、方角を保って手前に描く
 - 名前は 32 ブロック以内でだけ、柱に添えて出す
+- Distant Horizons（DH）が入っていてシェーダーパックを使っていないときは、柱を `LevelRenderEvents.COLLECT_SUBMITS` ではなく `END_MAIN`（バニラの画素に LOD の色を混ぜるフェードの後）で描く
+  - 柱は深度を書かない半透明なので、フェードが柱の後ろの地形の距離で掛かり、後ろの壁が遠いと柱が LOD の色に上書きされて欠ける。フェードの後に描けば欠けない
+  - `END_MAIN` では `FeatureRenderDispatcher` の `PreparedFrame` が使用中で `context.poseStack()` も使えないので、自前の `StagedVertexBuffer`（`RENDER_TYPE.format()` / `primitiveTopology()`）と `PoseStack` に書く。カメラの回転は `RenderSystem` の ModelViewStack に乗っている。描くときは `client.gameRenderer.mainRenderTarget()` の色と深度で `RenderPass` を作り、`PreparedRenderType.drawFromBuffer` で描く。深度の判定はレンダータイプのまま効く
+  - シェーダーパック使用中はフェードが掛からないので、今までどおり `COLLECT_SUBMITS` のまま。DH の設定や API は見ず、`FabricLoader.isModLoaded("distanthorizons")` と Iris の `IrisApi.isShaderPackInUse()` だけで決める。Iris のクラスに触れるのは `ShaderPacks` の中だけにして、Iris のない起動では読み込まれないようにする
+  - 柱の形・色・位置（`Beam`）は 2 つの経路で同じものを使う
 
 ## 他のプレイヤー
 
@@ -225,6 +230,14 @@ Sodium + Iris とバニラ描画の両方で走らせる（`gradle.properties` �
 | `terrain` | `FarTerrainTest` | 自前のスレッドの仕事が失敗しても後始末が動く・設定と前の版の設定の移行・遠くの地形（セーブから読む・生成する・版）・生成の順番・マップ距離・開き直したときに読み直さない・動いたときに比べ直す数・自然な地形 |
 | `background` | `BackgroundTerrainTest` | 開いていない間の範囲（ウィンドウとマップ距離で決まる形・すべて届く・外は頼まない・サーバーが遅れない）・一番引いて開いたときに空きがない・拡大して開いても範囲の全体が届く |
 | `load` | `TerrainLoadTest` | 遅れの判定に使うヒープの量（GC の後）・4K で一番引いた地図の負荷 |
+| `distant-horizons` | `DistantHorizonsTest` | DH のフェードが掛かる距離でピンの柱が欠けないこと・シェーダーパック使用中も柱が出ること |
+
+- `distant-horizons` は DH が入っていないときは何もせず戻る。スーパーフラットの地面から 60 ブロックほど上に足場を作り、50 ブロック先に白い壁、その手前 45 ブロックにピンを置く
+  - フェードを近く（約 27〜35 ブロック）に掛けるため、ワールドに入って LOD が描かれ始めてから `Lods.setOverdrawPreventionRadius` で `overdrawPreventionRadius` を 0.05 にする。ワールドに入る前に設定すると DH が読み直して戻るため。終わったら `clearValue()`
+  - 画面中央の柱の列の色が、上から下まで左右の列と違うことを、壁を背景にして確かめる。LOD は読み込みが続いて撮るたびに変わるので、ピンのあるなしの 2 枚の差では見ない
+  - DH のチャットの警告が写り込まないよう、撮る前にチャットを消す。HUD を隠すと柱も消えるので、このシナリオでは HUD を隠さない
+  - Iris があるときはシェーダーパックを有効にしても柱が出ることを確かめる（`MapTests.IrisPack`）
+  - DH の雲は動いて画素の比較が揺れるので `Lods.disableClouds` で消す
 
 - 座標の文字は、真っ白な画素が並ぶ幅を `Font.width(期待する文字) - 1`（最後の字の後の間隔は描かれない）と比べて確かめる。同じ桁数のときは、1 ブロックずらして画素が変わることで確かめる。マップ画面では地形の雪が真っ白に出ることがあるので、文字の背景の中だけを読む
 - 負の座標は、引いたマップ画面の左上にカーソルを置いて確かめる。負の座標までテレポートすると、遠くの地形のテストで使うチャンクが生成されてセーブに残り、その色を覚えてしまう
