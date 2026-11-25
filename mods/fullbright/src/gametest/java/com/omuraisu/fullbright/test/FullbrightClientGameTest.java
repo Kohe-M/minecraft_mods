@@ -7,9 +7,9 @@ import java.nio.file.Path;
 import java.util.Set;
 
 import com.omuraisu.fullbright.client.FullbrightClient;
+import com.omuraisu.testkit.Scenario;
 import com.omuraisu.testkit.Screenshots;
 
-import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.fabricmc.loader.api.FabricLoader;
@@ -24,13 +24,18 @@ import net.minecraft.util.ARGB;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 
-public class FullbrightClientGameTest implements FabricClientGameTest {
+public class FullbrightClientGameTest implements Scenario {
 	private static final Path CONFIG = FabricLoader.getInstance().getConfigDir().resolve("fullbright.txt");
 	private static final ResourceKey<Level> NO_AMBIENT = ResourceKey.create(Registries.DIMENSION,
 			Identifier.fromNamespaceAndPath("fullbright-gametest", "no_ambient"));
 
 	@Override
-	public void runTest(ClientGameTestContext context) {
+	public String name() {
+		return "fullbright";
+	}
+
+	@Override
+	public void run(ClientGameTestContext context) {
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			singleplayer.getConnection().waitForChunksRender();
 

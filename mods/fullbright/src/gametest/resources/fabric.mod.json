@@ -6,7 +6,8 @@
 	"environment": "*",
 	"entrypoints": {
 		"fabric-client-gametest": [
-			"com.omuraisu.fullbright.test.FullbrightClientGameTest"
+			"com.omuraisu.fullbright.test.FullbrightClientGameTest",
+			"com.omuraisu.fullbright.test.DistantHorizonsTest"
 		]
 	},
 	"depends": {
