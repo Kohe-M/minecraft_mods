@@ -157,7 +157,7 @@ python -m unittest discover -s tools     # dev.py のテスト（tools/test_dev.
 
 | クラス | |
 |---|---|
-| `TestServers.create(context[, properties])` | EULA に同意し、空いているポートで専用サーバーを立てる |
+| `TestServers.create(context[, properties])` | EULA に同意し、専用サーバーを立てる。ポートは空いているものを選び、properties に `server-port` があればそれを使う |
 | `Widgets.click(context, "文字")` / `hover` | 画面のボタンなどを表示している文字で探し、実際のマウスで押す・カーソルを置く |
 | `Screenshots.read(path, image -> ...)` | `takeScreenshot` の画像の画素を読む |
 | `Asserts.assertEquals(名前, 期待, 実際)` | 何を比べていたかが分かる失敗にする |

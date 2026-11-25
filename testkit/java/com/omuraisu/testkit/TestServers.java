@@ -19,7 +19,8 @@ public final class TestServers {
 		return create(context, new Properties());
 	}
 
-	// properties には server.properties に足す値を入れる。ポートは空いているものを選ぶ
+	// properties には server.properties に足す値を入れる。ポートは空いているものを選ぶが、
+	// server-port があればそれを使う（同じアドレスで別のワールドのサーバーを順に立てるときなど）
 	public static TestDedicatedServerContext create(ClientGameTestContext context, Properties properties) {
 		Properties all = new Properties();
 		all.putAll(properties);
@@ -27,8 +28,10 @@ public final class TestServers {
 			// テスト用のサーバーを起動するため、テスト環境の Minecraft EULA に同意する
 			Files.writeString(Path.of("eula.txt"), "eula=true\n");
 			// 普段のサーバーと重ならないよう空いているポートを使う
-			try (ServerSocket socket = new ServerSocket(0)) {
-				all.setProperty("server-port", String.valueOf(socket.getLocalPort()));
+			if (all.getProperty("server-port") == null) {
+				try (ServerSocket socket = new ServerSocket(0)) {
+					all.setProperty("server-port", String.valueOf(socket.getLocalPort()));
+				}
 			}
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
