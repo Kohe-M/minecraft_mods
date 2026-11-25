@@ -6,7 +6,8 @@
 	"environment": "*",
 	"entrypoints": {
 		"fabric-client-gametest": [
-			"com.omuraisu.zoom.test.ZoomClientGameTest"
+			"com.omuraisu.zoom.test.ZoomClientGameTest",
+			"com.omuraisu.zoom.test.DistantHorizonsTest"
 		]
 	},
 	"depends": {

@@ -15,8 +15,12 @@
 - `Camera.calculateFov` の結果を、画面の中心の見かけの大きさがちょうど倍率になる FOV（`2 atan(tan(fov / 2) / 倍率)`）に変える
 - 視点は `MouseHandler.turnPlayer` の前に、たまったマウスの移動量を倍率で割る
 - ホイールは `MouseHandler.onScroll` の `ScrollWheelHandler.onMouseScroll` を包み、ズーム中は (0, 0) を返す
+- Distant Horizons（DH）は LOD を描くのに、バニラがワールドの描画で使う射影行列（`ProjectionMatrixBuffer` に書かれる値）を読むので、`Camera.calculateFov` の差し替えが LOD にも届く。DH 用のフックはない
 
 ## ゲームテスト
 
 - 入ってすぐの最初のカーソル移動は捨てられるので、確かめる前に一度動かしておく
 - 倍率は目標に追いつくまで待ってから確かめる
+- `distant-horizons` シナリオ（`DistantHorizonsTest`）は、DH が入っていないときは何もせず戻る。スーパーフラットの地面から 60 ブロックほど上に足場を作り、100 ブロック先（描画距離のすぐ外）の LOD の地面を画面の中央に写す
+  - ズームの前後で、画面中央の画素が草の地面の色のまま（空の青が見えない）ことと、ズーム中も `Lods.waitForRendering` で LOD が描かれ続けることを確かめる。中央が地面なのに LOD が欠けると空が見える
+  - 地面のすぐ上だと LOD が地平線の数画素にしか写らないので、60 ブロック上から斜め下を見る。画素は HUD を隠して撮り、DH の雲は `Lods.disableClouds` で消す

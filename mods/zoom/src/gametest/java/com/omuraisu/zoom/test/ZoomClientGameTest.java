@@ -1,20 +1,25 @@
 package com.omuraisu.zoom.test;
 
+import com.omuraisu.testkit.Scenario;
 import com.omuraisu.zoom.client.ZoomClient;
 
-import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Blocks;
 
-public class ZoomClientGameTest implements FabricClientGameTest {
+public class ZoomClientGameTest implements Scenario {
 	// 倍率が目標に追いつくまで待つ
 	private static final int SETTLE_TICKS = 20;
 
 	@Override
-	public void runTest(ClientGameTestContext context) {
+	public String name() {
+		return "zoom";
+	}
+
+	@Override
+	public void run(ClientGameTestContext context) {
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			singleplayer.getConnection().waitForChunksRender();
 
