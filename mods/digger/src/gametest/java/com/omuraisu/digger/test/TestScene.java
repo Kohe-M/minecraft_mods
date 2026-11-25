@@ -14,7 +14,8 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 
 // クライアントのゲームテストで使う、正面の石の壁と鉱石の塊。プレイヤーは壁の 4 ブロック手前に立つ。
-// 壁の中央の石が範囲採掘の狙い、左の石炭鉱石が鉱石一括の狙い
+// 壁の中央の石が範囲採掘の狙い、左の石炭鉱石が鉱石一括の狙い、
+// 手前右の石がスニークで 1 つだけ掘る狙い（範囲採掘の狙いと重ならない位置）
 final class TestScene {
 	static final int WALL_DISTANCE = 4;
 
@@ -23,6 +24,7 @@ final class TestScene {
 	final int wallZ;
 	final BlockPos areaTarget;
 	final BlockPos coalTarget;
+	final BlockPos sneakTarget;
 
 	private TestScene(int x, int feetY, int wallZ) {
 		this.x = x;
@@ -31,6 +33,7 @@ final class TestScene {
 		this.areaTarget = new BlockPos(x, feetY + 1, wallZ);
 		// 真横の 45 度だとブロックの角を通って隣を狙うことがあるので、少しだけずらす
 		this.coalTarget = new BlockPos(x - 3, feetY + 1, wallZ);
+		this.sneakTarget = new BlockPos(x + 2, feetY + 1, wallZ + 1);
 	}
 
 	static TestScene build(ClientGameTestContext context, TestSingleplayerContext singleplayer) {
@@ -52,6 +55,9 @@ final class TestScene {
 			level.setBlockAndUpdate(new BlockPos(x - 3, y + 1, wallZ), Blocks.COAL_ORE.defaultBlockState());
 			level.setBlockAndUpdate(new BlockPos(x - 3, y + 2, wallZ), Blocks.COAL_ORE.defaultBlockState());
 			level.setBlockAndUpdate(new BlockPos(x - 2, y + 2, wallZ), Blocks.COAL_ORE.defaultBlockState());
+			// スニークで 1 つだけ掘る狙い。壁の 1 つ手前に 3×3 の石を置き、
+			// 範囲採掘が働いてしまうと何個も消えるようにする
+			fill(level, new BlockPos(x + 1, y + 1, wallZ + 1), new BlockPos(x + 3, y + 3, wallZ + 1), Blocks.STONE);
 
 			player.teleportTo(level, x + 0.5, y, z + 0.5, Set.of(), 180, 0, true);
 			player.getInventory().setSelectedSlot(0);

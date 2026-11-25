@@ -26,6 +26,12 @@ public record DigSettings(boolean area, int width, int height, int depth, boolea
 		return new DigSettings(value, width, height, depth, vein);
 	}
 
+	// スニーク中は範囲採掘をせず 1 つだけ掘る。鉱石一括はそのまま働く。
+	// 覚えている設定・設定ファイル・サーバーへ送る値は変えず、計画を立てるときだけ絞る
+	public DigSettings whenSneaking(boolean sneaking) {
+		return sneaking ? withArea(false) : this;
+	}
+
 	public DigSettings withVein(boolean value) {
 		return new DigSettings(area, width, height, depth, value);
 	}

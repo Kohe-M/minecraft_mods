@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeMap;
 
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBlockTags;
 import net.minecraft.core.BlockPos;
@@ -25,14 +26,11 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
-// 範囲採掘と鉱石一括で壊す位置と、その位置を壊すホットバーのスロットを決める。
+// 範囲採掘と鉱石一括で壊す位置を決める。壊す道具は findTool で、壊す直前に 1 つずつ選ぶ。
 // サーバーは壊した後、クライアントは枠線のために毎 tick 呼ぶので、ワールドを書き換えず同じ計算をする。
 // 狙ったブロックは呼んだ側がもう壊している（クライアントではまだ残っている）ため、結果には含めない。
-// 並びは狙ったブロックに近い順
+// 並びは鉱石、それ以外の順に、それぞれ狙ったブロックに近い順
 public final class DigPlan {
-	public record Break(BlockPos pos, int slot) {
-	}
-
 	private static final int MAX_VEIN = 256;
 	// 石を掘るだけで黒曜石や古代の残骸が取れないようにする上限。狙ったブロックがもっと硬ければそちらに合わせる
 	private static final float BASE_HARDNESS_LIMIT = 5.0F;
@@ -40,7 +38,7 @@ public final class DigPlan {
 	private DigPlan() {
 	}
 
-	public static List<Break> compute(
+	public static List<BlockPos> compute(
 			Player player, Level level, BlockPos target, BlockState targetState, Direction face, DigSettings settings) {
 		if (!settings.area() && !settings.vein()) {
 			return List.of();
@@ -50,26 +48,40 @@ public final class DigPlan {
 		boolean handheldTool = hand.is(ItemTags.PICKAXES) || hand.is(ItemTags.SHOVELS);
 		float targetHardness = targetState.getDestroySpeed(level, target);
 
-		Set<BlockPos> positions = new LinkedHashSet<>();
-
-		boolean areaStarted = settings.area()
-				&& handheldTool
-				&& isAreaBreakable(player, level, target, targetState, targetHardness);
-		if (areaStarted) {
-			for (BlockPos pos : areaPositions(player, target, face, settings)) {
-				if (pos.equals(target)) {
-					continue;
-				}
-				BlockState state = level.getBlockState(pos);
-				if (isAreaBreakable(player, level, pos, state, targetHardness)) {
-					positions.add(pos);
-				}
-			}
-		}
-
 		// 鉱石一括は、手に持った道具で掘れる鉱石を狙ったときだけ始まる。
 		// 木のつるはしでダイヤモンド鉱石を狙っても、取り直せないものを巻き込まない
 		boolean veinStarted = settings.vein() && isOre(targetState) && canMine(hand, targetState);
+
+		Set<BlockPos> positions = new LinkedHashSet<>();
+
+		// 鉱石一括が始まるときは、範囲採掘もオンでも鉱脈だけを掘る。
+		// つながった鉱石がなく 1 つだけのときも、まわりは掘らない
+		boolean areaStarted = settings.area()
+				&& !veinStarted
+				&& handheldTool
+				&& isAreaBreakable(player, level, target, targetState, targetHardness);
+		if (areaStarted) {
+			// 奥行きの層ごとに、壊すブロックが 1 つもない層で止める。
+			// 空洞や部屋の向こうの、見えていない壁まで壊さないため
+			for (List<BlockPos> layer : areaLayers(player, target, face, settings)) {
+				boolean any = false;
+				for (BlockPos pos : layer) {
+					if (pos.equals(target)) {
+						// 狙ったブロックはもう壊れている。この層にあったものとして扱う
+						any = true;
+						continue;
+					}
+					BlockState state = level.getBlockState(pos);
+					if (isAreaBreakable(player, level, pos, state, targetHardness)) {
+						positions.add(pos);
+						any = true;
+					}
+				}
+				if (!any) {
+					break;
+				}
+			}
+		}
 
 		if (settings.vein()) {
 			// 範囲に入った鉱石も、範囲の外へ続く鉱脈もまとめて掘る。1 回の採掘で掘る鉱石は、
@@ -119,23 +131,19 @@ public final class DigPlan {
 			positions.addAll(veinOres);
 		}
 
-		List<BlockPos> ordered = new ArrayList<>();
+		// 範囲採掘で鉱脈も巻き込むとき、道具の耐久が途中で足りなくなっても鉱石は掘れるよう、鉱石を先にする
+		List<BlockPos> ores = new ArrayList<>();
+		List<BlockPos> others = new ArrayList<>();
 		for (BlockPos pos : positions) {
-			if (!pos.equals(target) && !level.getBlockState(pos).isAir()) {
-				ordered.add(pos.immutable());
-			}
-		}
-		ordered.sort(nearest(target));
-
-		List<Break> plan = new ArrayList<>();
-		for (BlockPos pos : ordered) {
 			BlockState state = level.getBlockState(pos);
-			int slot = findTool(player, state);
-			if (slot >= 0) {
-				plan.add(new Break(pos, slot));
+			if (!pos.equals(target) && !state.isAir() && findTool(player, state) >= 0) {
+				(isOre(state) ? ores : others).add(pos.immutable());
 			}
 		}
-		return plan;
+		ores.sort(nearest(target));
+		others.sort(nearest(target));
+		ores.addAll(others);
+		return ores;
 	}
 
 	public static boolean isOre(BlockState state) {
@@ -160,7 +168,8 @@ public final class DigPlan {
 	}
 
 	// 手に持った道具で掘れるならそのスロット。掘れないならホットバーの左から、掘れるつるはし・シャベルを探す。
-	// 手に持った道具で掘れるのに耐久が足りないときは、別の道具に替えずに残す（-1）
+	// 手に持った道具で掘れるのに耐久が足りないときは、別の道具に替えずに残す（-1）。
+	// 使えるシャベルがなければ、土や砂利は手に持ったつるはしで壊す。雪のように正しい道具が要るものは何も落ちないので残す
 	public static int findTool(Player player, BlockState state) {
 		Inventory inventory = player.getInventory();
 		ItemStack hand = player.getMainHandItem();
@@ -174,6 +183,12 @@ public final class DigPlan {
 					&& hasDurability(player, stack)) {
 				return slot;
 			}
+		}
+		if (hand.is(ItemTags.PICKAXES)
+				&& state.is(BlockTags.MINEABLE_WITH_SHOVEL)
+				&& !state.requiresCorrectToolForDrops()
+				&& hasDurability(player, hand)) {
+			return inventory.getSelectedSlot();
 		}
 		return -1;
 	}
@@ -281,7 +296,8 @@ public final class DigPlan {
 		return tags;
 	}
 
-	private static List<BlockPos> areaPositions(
+	// 範囲採掘の箱を、面の手前から奥へ 1 層ずつ返す
+	private static List<List<BlockPos>> areaLayers(
 			Player player, BlockPos target, Direction face, DigSettings settings) {
 		int width = settings.width();
 		int height = settings.height();
@@ -348,11 +364,20 @@ public final class DigPlan {
 			maxY = Math.max(ty, endY);
 		}
 
-		List<BlockPos> positions = new ArrayList<>((maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1));
+		// 奥行きの軸に沿って、狙ったブロックの層を 0 として手前から並べる
+		Direction.Axis depthAxis = face.getAxis();
+		int depthStart = target.get(depthAxis);
+		int step = switch (depthAxis) {
+			case X -> face.getStepX();
+			case Y -> face.getStepY();
+			case Z -> face.getStepZ();
+		};
+		TreeMap<Integer, List<BlockPos>> layers = new TreeMap<>();
 		for (BlockPos pos : BlockPos.betweenClosed(minX, minY, minZ, maxX, maxY, maxZ)) {
-			positions.add(pos.immutable());
+			int distance = (depthStart - pos.get(depthAxis)) * step;
+			layers.computeIfAbsent(distance, key -> new ArrayList<>()).add(pos.immutable());
 		}
-		return positions;
+		return new ArrayList<>(layers.values());
 	}
 
 	private static Comparator<BlockPos> nearest(BlockPos target) {

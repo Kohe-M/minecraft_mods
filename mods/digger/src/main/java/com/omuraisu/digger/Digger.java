@@ -99,7 +99,9 @@ public class Digger implements ModInitializer {
 				face = Direction.getApproximateNearest(serverPlayer.getLookAngle()).getOpposite();
 			}
 
-			List<DigPlan.Break> plan = DigPlan.compute(serverPlayer, level, pos, state, face, settings);
+			// スニーク中は範囲採掘をせず 1 つだけ。覚えている設定は変えない
+			DigSettings planSettings = settings.whenSneaking(serverPlayer.isShiftKeyDown());
+			List<BlockPos> plan = DigPlan.compute(serverPlayer, level, pos, state, face, planSettings);
 			if (plan.isEmpty()) {
 				return;
 			}
@@ -107,20 +109,20 @@ public class Digger implements ModInitializer {
 			startCollecting(pos, level);
 			breaking = true;
 			try {
-				for (DigPlan.Break entry : plan) {
-					BlockPos next = entry.pos();
+				for (BlockPos next : plan) {
 					BlockState nextState = level.getBlockState(next);
 					if (nextState.isAir()) {
 						continue;
 					}
-					ItemStack tool = serverPlayer.getInventory().getItem(entry.slot());
-					if (!DigPlan.canMine(tool, nextState) || !DigPlan.hasDurability(serverPlayer, tool)) {
+					// 壊すたびに耐久が減るので、使う道具もそのたびに選ぶ
+					int slot = DigPlan.findTool(serverPlayer, nextState);
+					if (slot < 0) {
 						continue;
 					}
 					int previous = serverPlayer.getInventory().getSelectedSlot();
 					try {
-						if (entry.slot() != previous) {
-							serverPlayer.getInventory().setSelectedSlot(entry.slot());
+						if (slot != previous) {
+							serverPlayer.getInventory().setSelectedSlot(slot);
 						}
 						serverPlayer.gameMode.destroyBlock(next);
 					} finally {

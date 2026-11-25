@@ -47,6 +47,9 @@ public class DiggerClientGameTest implements Scenario {
 				testKeysAndConfig();
 				testAreaOutline();
 				testVeinOutline();
+				testVeinPriorityOutline();
+				testSneakOutline();
+				testSneakMining();
 				testInactiveOutline();
 				testMining();
 			}
@@ -148,6 +151,84 @@ public class DiggerClientGameTest implements Scenario {
 
 		if (on < 30 || off > 20) {
 			throw new AssertionError("vein outline should be visible on and gone off but was " + on + " on and " + off + " off");
+		}
+	}
+
+	// 鉱石を狙って鉱石一括が始まるときは、範囲採掘もオンでも範囲の枠を出さない
+	private void testVeinPriorityOutline() {
+		set(new DigSettings(false, 3, 3, 1, true));
+		aim(scene.coalTarget);
+		context.waitTicks(5);
+		int veinOnly = OutlinePixels.count(context.takeScreenshot("digger-outline-vein-priority-only"));
+
+		set(new DigSettings(true, 3, 3, 1, true));
+		context.waitTicks(5);
+		int both = OutlinePixels.count(context.takeScreenshot("digger-outline-vein-priority-both"));
+
+		// 同じ鉱脈の枠だけなら画素数はほぼ同じ。範囲の枠が増えたら大きく変わる
+		if (veinOnly < 30 || Math.abs(both - veinOnly) > 10) {
+			throw new AssertionError("vein outline should not change with area on but was "
+					+ veinOnly + " with vein only and " + both + " with both");
+		}
+	}
+
+	// スニーク中は範囲採掘の枠を出さない。V を押している間は出す
+	private void testSneakOutline() {
+		set(new DigSettings(true, 3, 3, 1, false));
+		context.getInput().holdShift();
+		context.waitTicks(5);
+		// しゃがむと目の高さが変わるので、押してから狙い直す
+		aim(scene.areaTarget);
+		context.waitTicks(5);
+		int sneaking = OutlinePixels.count(context.takeScreenshot("digger-outline-sneak"));
+
+		context.getInput().holdKey(DiggerClient.areaKey);
+		context.waitTicks(5);
+		int withAreaKey = OutlinePixels.count(context.takeScreenshot("digger-outline-sneak-area-key"));
+
+		context.getInput().releaseKey(DiggerClient.areaKey);
+		context.getInput().releaseShift();
+		context.waitTicks(5);
+		// V を離すと単押しとして範囲採掘が切り替わるので戻す
+		set(new DigSettings(true, 3, 3, 1, false));
+
+		if (sneaking > 20 || withAreaKey < 50) {
+			throw new AssertionError("sneaking should hide the area outline unless the area key is held but was "
+					+ sneaking + " sneaking and " + withAreaKey + " with the key");
+		}
+	}
+
+	// Shift を押しながら長押しで掘ると、サーバーでは 1 つだけ消える
+	private void testSneakMining() {
+		set(new DigSettings(true, 3, 3, 1, false));
+		context.getInput().holdShift();
+		context.waitTicks(5);
+		aim(scene.sneakTarget);
+		context.waitTicks(5);
+
+		context.getInput().holdMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTicks(40);
+		context.getInput().releaseMouse(InputConstants.MOUSE_BUTTON_LEFT);
+		context.waitTicks(5);
+		context.getInput().releaseShift();
+		context.waitTicks(5);
+
+		List<BlockPos> broken = singleplayer.getServer().computeOnServer(server -> {
+			var level = server.overworld();
+			var found = new java.util.ArrayList<BlockPos>();
+			for (int dx = -1; dx <= 1; dx++) {
+				for (int dy = 0; dy <= 2; dy++) {
+					BlockPos pos = new BlockPos(
+							scene.sneakTarget.getX() + dx, scene.sneakTarget.getY() + dy, scene.sneakTarget.getZ());
+					if (level.getBlockState(pos).isAir()) {
+						found.add(pos);
+					}
+				}
+			}
+			return found;
+		});
+		if (broken.size() != 1) {
+			throw new AssertionError("sneak mining should break 1 block but broke " + broken.size() + ": " + broken);
 		}
 	}
 

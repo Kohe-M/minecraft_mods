@@ -72,18 +72,19 @@ final class DigPreview {
 			return;
 		}
 
-		List<DigPlan.Break> plan = DigPlan.compute(
-				client.player, client.level, target, targetState, hit.getDirection(), settings);
+		// スニーク中は範囲採掘の枠を出さない。V を押している間は、奥行きを変えながら確かめられるように出す
+		DigSettings planSettings = DiggerClient.areaKey.isDown()
+				? settings
+				: settings.whenSneaking(client.player.isShiftKeyDown());
+		List<BlockPos> plan = DigPlan.compute(
+				client.player, client.level, target, targetState, hit.getDirection(), planSettings);
 		if (plan.isEmpty()) {
 			// 狙った 1 つだけならバニラの枠線に任せる
 			clear();
 			return;
 		}
 
-		List<BlockPos> positions = new ArrayList<>(plan.size() + 1);
-		for (DigPlan.Break entry : plan) {
-			positions.add(entry.pos());
-		}
+		List<BlockPos> positions = new ArrayList<>(plan);
 		positions.add(target);
 		if (positions.equals(shown)) {
 			return;
